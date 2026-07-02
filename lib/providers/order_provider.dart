@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:http/http.dart' as http;
+import '../core/config/supabase_config.dart';
 import '../core/database/db_helper.dart';
 import '../models/order_model.dart';
 
@@ -14,9 +15,6 @@ class OrderProvider with ChangeNotifier {
 
   final DbHelper _db = DbHelper.instance;
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
-
-  // The local IP address of your PC running the backend services
-  static const String _syncApiUrl = 'http://192.168.0.16:8081/api/v1/sync';
 
   List<OrderModel> get orders => _orders;
   bool get isLoading => _isLoading;
@@ -96,7 +94,7 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
-  // Synchronize all pending mutations using Transactional Outbox Pattern
+  // Synchronize all pending mutations directly to Supabase REST API
   Future<void> syncUnsyncedOrders() async {
     if (_isSyncing || !_isOnline) return;
 
@@ -107,54 +105,79 @@ class OrderProvider with ChangeNotifier {
     _syncProgress = 0.0;
     notifyListeners();
 
-    debugPrint('Starting synchronization of ${pendingMutations.length} mutations...');
+    debugPrint('Starting synchronization of ${pendingMutations.length} mutations to Supabase...');
+
+    final List<String> successfullySyncedMutationIds = [];
+    final List<String> successfullySyncedOrderIds = [];
 
     try {
-      // Map database rows to MutationDto schema expected by Sync Service
-      final payloadList = pendingMutations.map((m) {
-        return {
-          'id': m['id'],
-          'entityType': m['entity_type'],
-          'entityId': m['entity_id'],
-          'operation': m['operation'],
-          'payload': m['payload'],
-          'timestamp': m['timestamp'],
-        };
-      }).toList();
+      for (final m in pendingMutations) {
+        final mutationId = m['id'] as String;
+        final orderId = m['entity_id'] as String;
+        final operation = m['operation'] as String;
+        final payloadStr = m['payload'] as String;
 
-      // Perform POST request to Spring Boot sync-service
-      final response = await http.post(
-        Uri.parse(_syncApiUrl),
-        headers: {'Content-Type': 'application/json; charset=utf-8'},
-        body: jsonEncode(payloadList),
-      ).timeout(const Duration(seconds: 15));
+        bool success = false;
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
-        final bool success = responseData['success'] ?? false;
-        final List<dynamic> processedIds = responseData['processedIds'] ?? [];
+        if (operation == 'CREATE') {
+          // Perform HTTP POST to Supabase REST API
+          final response = await http.post(
+            Uri.parse('${SupabaseConfig.url}/rest/v1/orders'),
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': SupabaseConfig.anonKey,
+              'Authorization': 'Bearer ${SupabaseConfig.anonKey}',
+            },
+            body: payloadStr, // Flat JSON string containing order columns
+          ).timeout(const Duration(seconds: 10));
 
-        if (success && processedIds.isNotEmpty) {
-          // Identify which orders and mutations were processed successfully
-          final List<String> successfullySyncedMutationIds = List<String>.from(processedIds);
-          
-          final List<String> successfullySyncedOrderIds = pendingMutations
-              .where((m) => successfullySyncedSyncedIds(m, successfullySyncedMutationIds))
-              .map((m) => m['entity_id'] as String)
-              .toList();
+          if (response.statusCode == 201 || response.statusCode == 200 || response.statusCode == 204) {
+            success = true;
+          } else if (response.statusCode == 409) {
+            // 409 Conflict means it already exists in Supabase (idempotency safety)
+            success = true;
+          } else {
+            debugPrint('Failed to insert order to Supabase: Status ${response.statusCode}, Body: ${response.body}');
+          }
+        } else if (operation == 'DELETE') {
+          // Perform HTTP DELETE to Supabase REST API
+          final response = await http.delete(
+            Uri.parse('${SupabaseConfig.url}/rest/v1/orders?client_order_id=eq.$orderId'),
+            headers: {
+              'apikey': SupabaseConfig.anonKey,
+              'Authorization': 'Bearer ${SupabaseConfig.anonKey}',
+            },
+          ).timeout(const Duration(seconds: 10));
 
-          // 1. Purge successful mutations from outbox table
-          await _db.deleteMutations(successfullySyncedMutationIds);
-          
-          // 2. Mark local orders as synced in SQLite
-          await _db.markOrdersAsSynced(successfullySyncedOrderIds);
-          
-          // Reload from SQLite to update UI
-          await loadOrders();
-          debugPrint('Sync completed. ${processedIds.length} mutations resolved.');
+          if (response.statusCode == 204 || response.statusCode == 200) {
+            success = true;
+          } else {
+            debugPrint('Failed to delete order from Supabase: Status ${response.statusCode}, Body: ${response.body}');
+          }
         }
-      } else {
-        debugPrint('Sync failed with status code: ${response.statusCode}');
+
+        if (success) {
+          successfullySyncedMutationIds.add(mutationId);
+          if (operation == 'CREATE') {
+            successfullySyncedOrderIds.add(orderId);
+          }
+        } else {
+          // Break synchronization loop upon first error to maintain sequential integrity
+          debugPrint('Stopping sync due to failure in mutation $mutationId.');
+          break;
+        }
+      }
+
+      if (successfullySyncedMutationIds.isNotEmpty) {
+        // 1. Purge successful mutations from local outbox table
+        await _db.deleteMutations(successfullySyncedMutationIds);
+        
+        // 2. Mark local orders as synced in SQLite
+        await _db.markOrdersAsSynced(successfullySyncedOrderIds);
+        
+        // Reload from SQLite to update UI
+        await loadOrders();
+        debugPrint('Sync completed. ${successfullySyncedMutationIds.length} mutations resolved.');
       }
     } catch (e) {
       debugPrint('Sync failed with connection error: $e');
@@ -163,10 +186,6 @@ class OrderProvider with ChangeNotifier {
       _syncProgress = 0.0;
       notifyListeners();
     }
-  }
-
-  bool successfullySyncedSyncedIds(Map<String, dynamic> mutation, List<String> processedIds) {
-    return processedIds.contains(mutation['id']);
   }
 
   // Delete Order (Queue DELETE mutation in outbox)

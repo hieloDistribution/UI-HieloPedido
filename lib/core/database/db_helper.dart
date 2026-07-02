@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart';
@@ -88,7 +89,7 @@ class DbHelper {
   Future<void> insertOrder(OrderModel order) async {
     final mutationId = generateUuid();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final payload = order.toJsonPayload();
+    final payload = jsonEncode(order.toMap());
 
     if (kIsWeb) {
       _webOrders.add(order.toMap());
