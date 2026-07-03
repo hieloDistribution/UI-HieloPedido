@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hugeicons/hugeicons.dart';
 import '../providers/order_provider.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final VoidCallback onBack;
+  const LoginScreen({super.key, required this.onBack});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -57,11 +59,11 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (ctx) => AlertDialog(
             title: Text(
               'Ocurrió un error',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
             ),
             content: Text(
               e.toString().replaceAll('Exception:', '').trim(),
-              style: GoogleFonts.outfit(),
+              style: GoogleFonts.openSans(),
             ),
             actions: [
               TextButton(
@@ -81,33 +83,23 @@ class _LoginScreenState extends State<LoginScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Elegant dark ocean/glacier gradient background
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          // Back button
+          Positioned(
+            top: 40,
+            left: 16,
+            child: IconButton(
+              icon: const HugeIcon(
+                icon: HugeIcons.strokeRoundedArrowLeft01,
+                color: Colors.white,
+                size: 24,
               ),
+              onPressed: widget.onBack,
             ),
           ),
           
-          // Light glacier effects in background
-          Positioned(
-            top: -size.height * 0.2,
-            right: -size.width * 0.2,
-            child: Container(
-              width: size.width * 0.8,
-              height: size.width * 0.8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.cyan.withOpacity(0.08),
-              ),
-            ),
-          ),
-
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -116,63 +108,56 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Glacier / Ice logo icon
+                    // Snowflake logo icon
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.05),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.cyan.withOpacity(0.2)),
+                        border: Border.all(color: Colors.white.withOpacity(0.1)),
                       ),
-                      child: const Icon(
-                        Icons.ac_unit,
-                        size: 64,
+                      child: const HugeIcon(
+                        icon: HugeIcons.strokeRoundedSnow,
                         color: Colors.cyanAccent,
+                        size: 64,
                       ),
                     ).animate().fade(duration: 800.ms).scale(delay: 200.ms),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
                     
-                    // Brand Title
+                    // Brand Title (Inter Font, Bold)
                     Text(
                       'Hielo Distribution',
-                      style: GoogleFonts.outfit(
+                      style: GoogleFonts.inter(
                         fontSize: 32,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w900,
                         color: Colors.white,
-                        letterSpacing: 1.5,
+                        letterSpacing: -1.0,
                       ),
                     ).animate().fade(delay: 300.ms).slideY(begin: 0.3),
                     
                     Text(
                       'Pedidos Rápidos & Sincronizados',
-                      style: GoogleFonts.outfit(
-                        fontSize: 16,
-                        color: Colors.cyan.shade200,
+                      style: GoogleFonts.openSans(
+                        fontSize: 15,
+                        color: Colors.white70,
                       ),
                     ).animate().fade(delay: 450.ms).slideY(begin: 0.3),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 32),
 
-                    // Auth Card (Glassmorphism effect)
+                    // Auth Card
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.06),
+                        color: Colors.white.withOpacity(0.05),
                         borderRadius: BorderRadius.circular(24),
                         border: Border.all(color: Colors.white.withOpacity(0.1)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.25),
-                            blurRadius: 16,
-                            offset: const Offset(0, 8),
-                          )
-                        ],
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
                             _isSignUp ? 'Crear Cuenta' : 'Iniciar Sesión',
-                            style: GoogleFonts.outfit(
+                            style: GoogleFonts.inter(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
@@ -189,12 +174,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               labelText: 'Correo Electrónico',
                               labelStyle: const TextStyle(color: Colors.white70),
                               floatingLabelStyle: const TextStyle(color: Colors.cyanAccent),
-                              prefixIcon: const Icon(Icons.email, color: Colors.cyanAccent),
+                              prefixIcon: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12.0),
+                                child: HugeIcon(
+                                  icon: HugeIcons.strokeRoundedMail01,
+                                  color: Colors.cyanAccent,
+                                  size: 20,
+                                ),
+                              ),
+                              prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                               filled: true,
-                              fillColor: Colors.black.withOpacity(0.3),
+                              fillColor: Colors.white.withOpacity(0.05),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                                borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -227,21 +220,32 @@ class _LoginScreenState extends State<LoginScreen> {
                               labelText: 'Contraseña',
                               labelStyle: const TextStyle(color: Colors.white70),
                               floatingLabelStyle: const TextStyle(color: Colors.cyanAccent),
-                              prefixIcon: const Icon(Icons.lock, color: Colors.cyanAccent),
+                              prefixIcon: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 12.0),
+                                child: HugeIcon(
+                                  icon: HugeIcons.strokeRoundedLock,
+                                  color: Colors.cyanAccent,
+                                  size: 20,
+                                ),
+                              ),
+                              prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                               suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                icon: HugeIcon(
+                                  icon: _obscurePassword
+                                      ? HugeIcons.strokeRoundedViewOff
+                                      : HugeIcons.strokeRoundedView,
                                   color: Colors.white70,
+                                  size: 20,
                                 ),
                                 onPressed: () {
                                   setState(() => _obscurePassword = !_obscurePassword);
                                 },
                               ),
                               filled: true,
-                              fillColor: Colors.black.withOpacity(0.3),
+                              fillColor: Colors.white.withOpacity(0.05),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                                borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
@@ -289,7 +293,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     child: Text(
                                       _isSignUp ? 'REGISTRARSE' : 'INGRESAR',
-                                      style: GoogleFonts.outfit(
+                                      style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white,
@@ -299,10 +303,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                           const SizedBox(height: 16),
 
-                          // Switch Auth mode
+                          // Toggle Sign Up / Sign In
                           TextButton(
                             onPressed: () {
-                              setState(() => _isSignUp = !_isSignUp);
+                              setState(() {
+                                _isSignUp = !_isSignUp;
+                                _emailController.clear();
+                                _passwordController.clear();
+                              });
                             },
                             child: Text(
                               _isSignUp
@@ -346,14 +354,14 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           label: Text(
                             'Iniciar Sesión con Google',
-                            style: GoogleFonts.outfit(
+                            style: GoogleFonts.inter(
                               fontSize: 15,
                               color: Colors.white,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                            side: BorderSide(color: Colors.white.withOpacity(0.1)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),

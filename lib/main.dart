@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/config/supabase_config.dart';
 import 'providers/order_provider.dart';
 import 'core/theme/theme.dart';
+import 'screens/welcome_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
 
@@ -37,7 +38,27 @@ class MyApp extends StatelessWidget {
       title: 'Hielo Distribution',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      home: user == null ? const LoginScreen() : const MainNavigationScreen(),
+      home: user == null ? const AuthFlowWrapper() : const MainNavigationScreen(),
     );
+  }
+}
+
+class AuthFlowWrapper extends StatefulWidget {
+  const AuthFlowWrapper({super.key});
+
+  @override
+  State<AuthFlowWrapper> createState() => _AuthFlowWrapperState();
+}
+
+class _AuthFlowWrapperState extends State<AuthFlowWrapper> {
+  bool _showLogin = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showLogin) {
+      return LoginScreen(onBack: () => setState(() => _showLogin = false));
+    } else {
+      return WelcomeScreen(onComenzar: () => setState(() => _showLogin = true));
+    }
   }
 }
