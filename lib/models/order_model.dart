@@ -2,6 +2,7 @@ import 'dart:convert';
 
 class OrderModel {
   final String clientOrderId; // UUID generated on the client
+  final String userId; // Supabase user ID who created the order
   final String clientName;
   final String productId;
   final String productName;
@@ -12,6 +13,7 @@ class OrderModel {
 
   OrderModel({
     required this.clientOrderId,
+    required this.userId,
     required this.clientName,
     required this.productId,
     required this.productName,
@@ -24,10 +26,11 @@ class OrderModel {
   // Calculate total price
   double get total => price * quantity;
 
-  // Convert to Map for SQLite database insertion
+  // Convert to Map for SQLite database insertion and Supabase
   Map<String, dynamic> toMap() {
     return {
       'client_order_id': clientOrderId,
+      'user_id': userId,
       'client_name': clientName,
       'product_id': productId,
       'product_name': productName,
@@ -38,43 +41,25 @@ class OrderModel {
     };
   }
 
-  // Convert Map from SQLite database to OrderModel
+  // Convert Map from SQLite database/Supabase to OrderModel
   factory OrderModel.fromMap(Map<String, dynamic> map) {
     return OrderModel(
       clientOrderId: map['client_order_id'] as String,
+      userId: map['user_id'] as String? ?? '',
       clientName: map['client_name'] as String,
       productId: map['product_id'] as String,
       productName: map['product_name'] as String,
       quantity: map['quantity'] as int,
       price: (map['price'] as num).toDouble(),
       createdAt: DateTime.parse(map['created_at'] as String),
-      isSynced: map['is_synced'] as int,
+      isSynced: map['is_synced'] as int? ?? 0,
     );
-  }
-
-  // Format payload JSON string as expected by the backend
-  String toJsonPayload() {
-    final payloadMap = {
-      'clientOrderId': clientOrderId,
-      'clientId': clientName, // mapped to clientName inputted in UI
-      'salespersonId': 'VENDEDOR-001', // Predeterminado según el contexto
-      // Formato yyyy-MM-ddTHH:mm:ss esperado por Spring Boot
-      'createdAt': createdAt.toIso8601String().split('.').first,
-      'totalAmount': total,
-      'items': [
-        {
-          'productId': productId,
-          'quantity': quantity,
-          'price': price,
-        }
-      ]
-    };
-    return jsonEncode(payloadMap);
   }
 
   // Create a copy with modified values
   OrderModel copyWith({
     String? clientOrderId,
+    String? userId,
     String? clientName,
     String? productId,
     String? productName,
@@ -85,6 +70,7 @@ class OrderModel {
   }) {
     return OrderModel(
       clientOrderId: clientOrderId ?? this.clientOrderId,
+      userId: userId ?? this.userId,
       clientName: clientName ?? this.clientName,
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,

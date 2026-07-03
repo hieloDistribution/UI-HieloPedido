@@ -2,38 +2,52 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:http/http.dart' as http;
-import '../core/config/supabase_config.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/database/db_helper.dart';
 import '../models/order_model.dart';
 
 class OrderProvider with ChangeNotifier {
   List<OrderModel> _orders = [];
+  List<Map<String, dynamic>> _adminOrders = [];
   bool _isLoading = false;
   bool _isSyncing = false;
   bool _isOnline = true;
+  String _userRole = 'distributor'; // 'distributor' or 'admin'
 
   final DbHelper _db = DbHelper.instance;
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
+  StreamSubscription<AuthState>? _authStateSubscription;
 
   List<OrderModel> get orders => _orders;
+  List<Map<String, dynamic>> get adminOrders => _adminOrders;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   bool get isOnline => _isOnline;
+  String get userRole => _userRole;
 
-  double _syncProgress = 0.0;
-  double get syncProgress => _syncProgress;
+  User? get currentUser => Supabase.instance.client.auth.currentUser;
 
   OrderProvider() {
     _init();
   }
 
   Future<void> _init() async {
-    await loadOrders();
     await _checkInitialConnection();
     _startConnectivityListener();
+    _startSupabaseAuthListener();
+    
+    // Initial role and data load if already logged in
+    if (currentUser != null) {
+      await refreshUserRole();
+      if (_userRole == 'admin') {
+        await fetchAdminOrders();
+      } else {
+        await loadOrders();
+      }
+    }
   }
 
+  // --- Connectivity Management ---
   Future<void> _checkInitialConnection() async {
     final result = await Connectivity().checkConnectivity();
     _updateConnectionStatus(result);
@@ -55,11 +69,106 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
-  Future<void> loadOrders() async {
+  // --- Supabase Authentication ---
+  void _startSupabaseAuthListener() {
+    _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+
+      if (event == AuthChangeEvent.signedIn && session != null) {
+        await refreshUserRole();
+        if (_userRole == 'admin') {
+          await fetchAdminOrders();
+        } else {
+          await loadOrders();
+          syncUnsyncedOrders();
+        }
+      } else if (event == AuthChangeEvent.signedOut) {
+        _orders = [];
+        _adminOrders = [];
+        _userRole = 'distributor';
+        notifyListeners();
+      }
+    });
+  }
+
+  Future<void> refreshUserRole() async {
+    if (currentUser == null) return;
+    try {
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select('role')
+          .eq('id', currentUser!.id)
+          .maybeSingle();
+      
+      if (response != null && response['role'] != null) {
+        _userRole = response['role'] as String;
+      } else {
+        _userRole = 'distributor'; // Fallback
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error fetching user role: $e');
+      _userRole = 'distributor'; // Default
+    }
+  }
+
+  Future<void> loginWithEmail(String email, String password) async {
     _isLoading = true;
     notifyListeners();
     try {
-      _orders = await _db.getAllOrders();
+      await Supabase.instance.client.auth.signInWithPassword(email: email, password: password);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signUpWithEmail(String email, String password) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await Supabase.instance.client.auth.signUp(email: email, password: password);
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> loginWithGoogle() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'io.supabase.hielopedido://login-callback',
+      );
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> logout() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // --- Distributor Orders (SQLite + Supabase Sync) ---
+  Future<void> loadOrders() async {
+    if (currentUser == null) return;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      // Local SQLite filter by logged-in user id
+      final allOrders = await _db.getAllOrders();
+      _orders = allOrders.where((o) => o.userId == currentUser!.id).toList();
     } catch (e) {
       debugPrint('Error loading orders: $e');
     } finally {
@@ -68,12 +177,13 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
-  // Add Order (UUID primary key and Transactional Outbox write)
   Future<void> addOrder(String clientName, String productId, String productName, int quantity, double price) async {
+    if (currentUser == null) return;
+
     final clientOrderId = generateUuid();
-    
     final newOrder = OrderModel(
       clientOrderId: clientOrderId,
+      userId: currentUser!.id,
       clientName: clientName,
       productId: productId,
       productName: productName,
@@ -83,26 +193,34 @@ class OrderProvider with ChangeNotifier {
       isSynced: 0,
     );
 
-    // Save atomically in local DB (inserts order and PENDING CREATE mutation in outbox)
+    // Save atomically in SQLite (orders + outbox CREATE mutation)
     await _db.insertOrder(newOrder);
     _orders.insert(0, newOrder);
     notifyListeners();
 
-    // Trigger sync automatically if online
+    // Try sync immediately if online
     if (_isOnline) {
       syncUnsyncedOrders();
     }
   }
 
-  // Synchronize all pending mutations directly to Supabase REST API
+  Future<void> deleteOrder(String clientOrderId) async {
+    await _db.deleteOrder(clientOrderId);
+    _orders.removeWhere((o) => o.clientOrderId == clientOrderId);
+    notifyListeners();
+
+    if (_isOnline) {
+      syncUnsyncedOrders();
+    }
+  }
+
   Future<void> syncUnsyncedOrders() async {
-    if (_isSyncing || !_isOnline) return;
+    if (_isSyncing || !_isOnline || currentUser == null) return;
 
     final pendingMutations = await _db.getPendingMutations();
     if (pendingMutations.isEmpty) return;
 
     _isSyncing = true;
-    _syncProgress = 0.0;
     notifyListeners();
 
     debugPrint('Starting synchronization of ${pendingMutations.length} mutations to Supabase...');
@@ -111,6 +229,8 @@ class OrderProvider with ChangeNotifier {
     final List<String> successfullySyncedOrderIds = [];
 
     try {
+      final supabaseClient = Supabase.instance.client;
+
       for (final m in pendingMutations) {
         final mutationId = m['id'] as String;
         final orderId = m['entity_id'] as String;
@@ -119,40 +239,24 @@ class OrderProvider with ChangeNotifier {
 
         bool success = false;
 
-        if (operation == 'CREATE') {
-          // Perform HTTP POST to Supabase REST API
-          final response = await http.post(
-            Uri.parse('${SupabaseConfig.url}/rest/v1/orders'),
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': SupabaseConfig.anonKey,
-              'Authorization': 'Bearer ${SupabaseConfig.anonKey}',
-            },
-            body: payloadStr, // Flat JSON string containing order columns
-          ).timeout(const Duration(seconds: 10));
-
-          if (response.statusCode == 201 || response.statusCode == 200 || response.statusCode == 204) {
+        try {
+          if (operation == 'CREATE') {
+            final Map<String, dynamic> orderMap = jsonDecode(payloadStr);
+            // Remove local flag field
+            orderMap.remove('is_synced');
+            
+            // Insert directly to Supabase Orders
+            await supabaseClient.from('orders').upsert(orderMap);
             success = true;
-          } else if (response.statusCode == 409) {
-            // 409 Conflict means it already exists in Supabase (idempotency safety)
+          } else if (operation == 'DELETE') {
+            await supabaseClient.from('orders').delete().eq('client_order_id', orderId);
             success = true;
-          } else {
-            debugPrint('Failed to insert order to Supabase: Status ${response.statusCode}, Body: ${response.body}');
           }
-        } else if (operation == 'DELETE') {
-          // Perform HTTP DELETE to Supabase REST API
-          final response = await http.delete(
-            Uri.parse('${SupabaseConfig.url}/rest/v1/orders?client_order_id=eq.$orderId'),
-            headers: {
-              'apikey': SupabaseConfig.anonKey,
-              'Authorization': 'Bearer ${SupabaseConfig.anonKey}',
-            },
-          ).timeout(const Duration(seconds: 10));
-
-          if (response.statusCode == 204 || response.statusCode == 200) {
+        } catch (dbError) {
+          debugPrint('Error syncing single mutation $mutationId: $dbError');
+          // If already exists or deleted on server, we can skip it to avoid getting stuck
+          if (dbError.toString().contains('409') || dbError.toString().contains('unique_violation')) {
             success = true;
-          } else {
-            debugPrint('Failed to delete order from Supabase: Status ${response.statusCode}, Body: ${response.body}');
           }
         }
 
@@ -162,48 +266,52 @@ class OrderProvider with ChangeNotifier {
             successfullySyncedOrderIds.add(orderId);
           }
         } else {
-          // Break synchronization loop upon first error to maintain sequential integrity
-          debugPrint('Stopping sync due to failure in mutation $mutationId.');
+          debugPrint('Sync loop paused at mutation $mutationId due to server/network issue.');
           break;
         }
       }
 
       if (successfullySyncedMutationIds.isNotEmpty) {
-        // 1. Purge successful mutations from local outbox table
         await _db.deleteMutations(successfullySyncedMutationIds);
-        
-        // 2. Mark local orders as synced in SQLite
         await _db.markOrdersAsSynced(successfullySyncedOrderIds);
-        
-        // Reload from SQLite to update UI
         await loadOrders();
-        debugPrint('Sync completed. ${successfullySyncedMutationIds.length} mutations resolved.');
+        
+        // If we are admin, refresh dashboard as well
+        if (_userRole == 'admin') {
+          await fetchAdminOrders();
+        }
       }
     } catch (e) {
-      debugPrint('Sync failed with connection error: $e');
+      debugPrint('Sync process encountered an exception: $e');
     } finally {
       _isSyncing = false;
-      _syncProgress = 0.0;
       notifyListeners();
     }
   }
 
-  // Delete Order (Queue DELETE mutation in outbox)
-  Future<void> deleteOrder(String clientOrderId) async {
-    // Delete local SQLite record and queue DELETE mutation in outbox
-    await _db.deleteOrder(clientOrderId);
-    _orders.removeWhere((o) => o.clientOrderId == clientOrderId);
+  // --- Admin Methods ---
+  Future<void> fetchAdminOrders() async {
+    if (currentUser == null || _userRole != 'admin') return;
+    _isLoading = true;
     notifyListeners();
-
-    // Trigger sync automatically to delete on the server
-    if (_isOnline) {
-      syncUnsyncedOrders();
+    try {
+      final response = await Supabase.instance.client
+          .from('orders')
+          .select('*, profiles(email, full_name)');
+      
+      _adminOrders = List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('Error fetching admin orders: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
   @override
   void dispose() {
     _connectivitySubscription.cancel();
+    _authStateSubscription?.cancel();
     super.dispose();
   }
 }

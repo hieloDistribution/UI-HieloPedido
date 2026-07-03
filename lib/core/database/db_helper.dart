@@ -39,7 +39,7 @@ class DbHelper {
       throw UnsupportedError('SQLite database cannot be accessed directly on Web. Use CRUD methods instead.');
     }
     if (_database != null) return _database!;
-    _database = await _initDB('orders_v2.db');
+    _database = await _initDB('orders_v3.db');
     return _database!;
   }
 
@@ -59,6 +59,7 @@ class DbHelper {
     await db.execute('''
       CREATE TABLE orders (
         client_order_id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
         client_name TEXT NOT NULL,
         product_id TEXT NOT NULL,
         product_name TEXT NOT NULL,
