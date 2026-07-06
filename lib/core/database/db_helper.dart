@@ -39,7 +39,7 @@ class DbHelper {
       throw UnsupportedError('SQLite database cannot be accessed directly on Web. Use CRUD methods instead.');
     }
     if (_database != null) return _database!;
-    _database = await _initDB('orders_v3.db');
+    _database = await _initDB('orders_v6.db');
     return _database!;
   }
 
@@ -66,7 +66,18 @@ class DbHelper {
         quantity INTEGER NOT NULL,
         price REAL NOT NULL,
         created_at TEXT NOT NULL,
-        is_synced INTEGER NOT NULL
+        is_synced INTEGER NOT NULL,
+        status TEXT DEFAULT 'pendiente',
+        repartidor_id TEXT,
+        verification_code TEXT,
+        delivery_address TEXT,
+        client_phone TEXT,
+        accepted_at TEXT,
+        delivered_at TEXT,
+        payment_method TEXT DEFAULT 'efectivo',
+        delivery_latitude REAL,
+        delivery_longitude REAL,
+        client_avatar_url TEXT
       )
     ''');
 
@@ -107,6 +118,45 @@ class DbHelper {
       final db = await database;
       await db.transaction((txn) async {
         // Insert order
+        await txn.insert('orders', order.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        // Insert mutation to outbox
+        await txn.insert('outbox', {
+          'id': mutationId,
+          'entity_type': 'ORDER',
+          'entity_id': order.clientOrderId,
+          'operation': 'CREATE',
+          'payload': payload,
+          'timestamp': timestamp,
+          'status': 'PENDING',
+        });
+      });
+    }
+  }
+
+  // Update Order and queue its CREATE/UPSERT mutation in outbox
+  Future<void> updateOrder(OrderModel order) async {
+    final mutationId = generateUuid();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final payload = jsonEncode(order.toMap());
+
+    if (kIsWeb) {
+      final index = _webOrders.indexWhere((o) => o['client_order_id'] == order.clientOrderId);
+      if (index != -1) {
+        _webOrders[index] = order.toMap();
+      }
+      _webOutbox.add({
+        'id': mutationId,
+        'entity_type': 'ORDER',
+        'entity_id': order.clientOrderId,
+        'operation': 'CREATE',
+        'payload': payload,
+        'timestamp': timestamp,
+        'status': 'PENDING',
+      });
+    } else {
+      final db = await database;
+      await db.transaction((txn) async {
+        // Update order
         await txn.insert('orders', order.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
         // Insert mutation to outbox
         await txn.insert('outbox', {
@@ -215,6 +265,18 @@ class DbHelper {
         orderIds,
       );
     }
+  }
+
+  // Cache fetched orders locally
+  Future<void> cacheOrders(List<OrderModel> orders) async {
+    if (kIsWeb || orders.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final order in orders) {
+        final localOrder = order.copyWith(isSynced: 1);
+        await txn.insert('orders', localOrder.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
   }
 
   // Close DB connection

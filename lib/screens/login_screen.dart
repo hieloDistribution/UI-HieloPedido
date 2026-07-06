@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 import '../providers/order_provider.dart';
+import 'register_screen.dart'; // Import register screen for navigation
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -17,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isSignUp = false;
+  
   bool _obscurePassword = true;
 
   @override
@@ -32,43 +33,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final provider = Provider.of<OrderProvider>(context, listen: false);
     try {
-      if (_isSignUp) {
-        await provider.signUpWithEmail(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('¡Cuenta creada! Por favor inicia sesión.'),
-              backgroundColor: Colors.teal,
-            ),
-          );
-          setState(() => _isSignUp = false);
-        }
-      } else {
-        await provider.loginWithEmail(
-          _emailController.text.trim(),
-          _passwordController.text.trim(),
-        );
-      }
+      await provider.loginWithEmail(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
     } catch (e) {
       if (mounted) {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1E293B),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: const BorderSide(color: Colors.white10),
+            ),
             title: Text(
               'Ocurrió un error',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold),
+              style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.white),
             ),
             content: Text(
               e.toString().replaceAll('Exception:', '').trim(),
-              style: GoogleFonts.openSans(),
+              style: GoogleFonts.openSans(color: Colors.white70),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Entendido', style: TextStyle(color: Colors.teal)),
+                child: const Text('Entendido', style: TextStyle(color: Colors.cyanAccent)),
               )
             ],
           ),
@@ -80,7 +70,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
-    final size = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -102,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
           
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
               child: Form(
                 key: _formKey,
                 child: Column(
@@ -156,14 +145,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            _isSignUp ? 'Crear Cuenta' : 'Iniciar Sesión',
+                            'Iniciar Sesión',
                             style: GoogleFonts.inter(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 24),
 
                           // Email Input
                           TextFormField(
@@ -186,9 +175,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.05),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
-                              ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                                ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(color: Colors.cyanAccent, width: 2),
@@ -292,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     ),
                                     child: Text(
-                                      _isSignUp ? 'REGISTRARSE' : 'INGRESAR',
+                                      'INGRESAR',
                                       style: GoogleFonts.inter(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
@@ -306,17 +295,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           // Toggle Sign Up / Sign In
                           TextButton(
                             onPressed: () {
-                              setState(() {
-                                _isSignUp = !_isSignUp;
-                                _emailController.clear();
-                                _passwordController.clear();
-                              });
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const RegisterScreen(),
+                                ),
+                              );
                             },
-                            child: Text(
-                              _isSignUp
-                                  ? '¿Ya tienes cuenta? Inicia Sesión'
-                                  : '¿No tienes cuenta? Regístrate',
-                              style: const TextStyle(color: Colors.cyanAccent),
+                            child: const Text(
+                              '¿No tienes cuenta? Regístrate',
+                              style: TextStyle(color: Colors.cyanAccent),
                             ),
                           ),
                         ],
@@ -326,48 +314,47 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 24),
                     
                     // Google Sign-In button
-                    if (!_isSignUp)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            try {
-                              await provider.loginWithGoogle();
-                            } catch (e) {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Error de Google Auth: ${e.toString()}'),
-                                    backgroundColor: Colors.redAccent,
-                                  ),
-                                );
-                              }
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          try {
+                            await provider.loginWithGoogle();
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error de Google Auth: ${e.toString()}'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
                             }
+                          }
+                        },
+                        icon: Image.network(
+                          'https://img.icons8.com/color/48/000000/google-logo.png',
+                          height: 22,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(Icons.g_mobiledata, color: Colors.cyanAccent, size: 24);
                           },
-                          icon: Image.network(
-                            'https://img.icons8.com/color/48/000000/google-logo.png',
-                            height: 22,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Icon(Icons.g_mobiledata, color: Colors.cyanAccent, size: 24);
-                            },
-                          ),
-                          label: Text(
-                            'Iniciar Sesión con Google',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.white.withOpacity(0.1)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                        ),
+                        label: Text(
+                          'Iniciar Sesión con Google',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ).animate().fade(delay: 650.ms),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ).animate().fade(delay: 650.ms),
                   ],
                 ),
               ),
