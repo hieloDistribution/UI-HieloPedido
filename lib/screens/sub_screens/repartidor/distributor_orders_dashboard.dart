@@ -871,16 +871,18 @@ class _RouteMapScreenState extends State<_RouteMapScreen> {
                                   code,
                                 );
                                 if (success) {
-                                  Navigator.pop(ctx);
-                                  Navigator.pop(context);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        '¡Entrega completada con éxito! 📦',
+                                  if (mounted) {
+                                    Navigator.pop(ctx);
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          '¡Entrega completada con éxito! 📦',
+                                        ),
+                                        backgroundColor: Colors.teal,
                                       ),
-                                      backgroundColor: Colors.teal,
-                                    ),
-                                  );
+                                    );
+                                  }
                                 } else {
                                   setModalState(() {
                                     errorMsg = 'Código inválido';

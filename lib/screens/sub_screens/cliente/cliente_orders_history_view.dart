@@ -17,6 +17,16 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
   String _selectedFilter = 'Todos';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<OrderProvider>(context, listen: false).loadOrders();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
     final currencyFormatter = NumberFormat.simpleCurrency(

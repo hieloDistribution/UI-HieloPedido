@@ -46,24 +46,39 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
       name: "Bolsa de Hielo Premium 5kg",
       weight: "5 kg",
       price: 15000.0,
-      description: "Hielo de agua purificada, filtrado por ósmosis inversa. Cilindros compactos y cristalinos de larga duración, ideales para bebidas y refrigeradores familiares.",
-      features: ["Rolito Macizo", "Purificación por Ósmosis", "Bolsa Hermética Reforzada"],
+      description:
+          "Hielo de agua purificada, filtrado por ósmosis inversa. Cilindros compactos y cristalinos de larga duración, ideales para bebidas y refrigeradores familiares.",
+      features: [
+        "Rolito Macizo",
+        "Purificación por Ósmosis",
+        "Bolsa Hermética Reforzada",
+      ],
       promoBadge: "Más Vendido",
     ),
     IceProduct(
       name: "Bolsa de Hielo Familiar 10kg",
       weight: "10 kg",
       price: 25000.0,
-      description: "La medida perfecta para tus reuniones y asados del fin de semana. Hielo de alta densidad que mantiene el frío por mucho más tiempo sin diluir tus bebidas.",
-      features: ["Formato Ahorro", "Ideal para Conservadoras", "Cristalino y Puro"],
+      description:
+          "La medida perfecta para tus reuniones y asados del fin de semana. Hielo de alta densidad que mantiene el frío por mucho más tiempo sin diluir tus bebidas.",
+      features: [
+        "Formato Ahorro",
+        "Ideal para Conservadoras",
+        "Cristalino y Puro",
+      ],
       promoBadge: "Mejor Valor",
     ),
     IceProduct(
       name: "Hielo Triturado Premium 8kg",
       weight: "8 kg",
       price: 20000.0,
-      description: "Especialmente diseñado para coctelería, jugos y licuados. Granulación uniforme de fácil manejo para enfriar copas y servir directo.",
-      features: ["Textura Especial Cocteles", "Fácil de Servir", "Enfriamiento Instantáneo"],
+      description:
+          "Especialmente diseñado para coctelería, jugos y licuados. Granulación uniforme de fácil manejo para enfriar copas y servir directo.",
+      features: [
+        "Textura Especial Cocteles",
+        "Fácil de Servir",
+        "Enfriamiento Instantáneo",
+      ],
       promoBadge: "Especial Barra",
     ),
   ];
@@ -92,7 +107,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
   Future<String> _reverseGeocode(double lat, double lng) async {
     try {
       final response = await http.get(
-        Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&zoom=18&addressdetails=1'),
+        Uri.parse(
+          'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&zoom=18&addressdetails=1',
+        ),
         headers: {'User-Agent': 'order_flow_app'},
       );
       if (response.statusCode == 200) {
@@ -118,7 +135,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return null;
     }
-    
+
     if (permission == LocationPermission.deniedForever) return null;
 
     return await Geolocator.getCurrentPosition();
@@ -129,13 +146,18 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
     BuildContext context,
     Function(LatLng) onLocationSelected,
   ) {
-    // Coordenadas fijas solicitadas por el usuario: 26°11'6"S 58°10'27"W -> -26.18500, -58.17417
     LatLng centerPosition = const LatLng(-26.18500, -58.17417);
 
     showNavigatorScreen(BuildContext ctx) {
       return Scaffold(
         appBar: AppBar(
-          title: Text('Mueve el mapa', style: GoogleFonts.outfit(color: Colors.black, fontWeight: FontWeight.bold)),
+          title: Text(
+            'Mueve el mapa',
+            style: GoogleFonts.outfit(
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           backgroundColor: Colors.white,
           elevation: 0,
           leading: IconButton(
@@ -160,15 +182,15 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                  urlTemplate:
+                      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                   subdomains: const ['a', 'b', 'c', 'd'],
                 ),
               ],
             ),
-            // Pin fijo en el centro de la pantalla (Estilo Uber)
             Center(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 35), // Ajuste para que la punta del pin sea el centro real
+                padding: const EdgeInsets.only(bottom: 35),
                 child: const Icon(
                   Icons.location_on,
                   size: 45,
@@ -176,7 +198,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                 ),
               ),
             ),
-            // Botón de confirmación inferior
             Positioned(
               bottom: 24,
               left: 24,
@@ -221,7 +242,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
     OrderProvider provider,
     IceProduct product,
   ) {
-    // Invocar la carga de repartidores asíncronamente
     provider.fetchRepartidoresLocations();
 
     int orderQuantity = 1;
@@ -232,7 +252,10 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
     bool isLocating = false;
 
     final phoneController = TextEditingController(
-      text: provider.currentUser?.userMetadata?['phone'] ?? provider.currentUser?.userMetadata?['celular'] ?? '',
+      text:
+          provider.currentUser?.userMetadata?['phone'] ??
+          provider.currentUser?.userMetadata?['celular'] ??
+          '',
     );
     final addressController = TextEditingController();
 
@@ -297,7 +320,10 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                         Row(
                           children: [
                             IconButton(
-                              icon: const Icon(Icons.remove_circle_outline, color: Colors.black87),
+                              icon: const Icon(
+                                Icons.remove_circle_outline,
+                                color: Colors.black87,
+                              ),
                               onPressed: () => orderQuantity > 1
                                   ? setModalState(() => orderQuantity--)
                                   : null,
@@ -310,7 +336,10 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.add_circle_outline, color: Colors.black87),
+                              icon: const Icon(
+                                Icons.add_circle_outline,
+                                color: Colors.black87,
+                              ),
                               onPressed: () =>
                                   setModalState(() => orderQuantity++),
                             ),
@@ -336,7 +365,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           child: ChoiceChip(
                             avatar: Icon(
                               Icons.payments_outlined,
-                              color: paymentMethod == 'efectivo' ? Colors.white : Colors.black87,
+                              color: paymentMethod == 'efectivo'
+                                  ? Colors.white
+                                  : Colors.black87,
                               size: 18,
                             ),
                             label: Text(
@@ -344,7 +375,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                               style: GoogleFonts.outfit(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
-                                color: paymentMethod == 'efectivo' ? Colors.white : Colors.black87,
+                                color: paymentMethod == 'efectivo'
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                             selected: paymentMethod == 'efectivo',
@@ -362,7 +395,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           child: ChoiceChip(
                             avatar: Icon(
                               Icons.account_balance_outlined,
-                              color: paymentMethod == 'transferencia' ? Colors.white : Colors.black87,
+                              color: paymentMethod == 'transferencia'
+                                  ? Colors.white
+                                  : Colors.black87,
                               size: 18,
                             ),
                             label: Text(
@@ -370,7 +405,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                               style: GoogleFonts.outfit(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
-                                color: paymentMethod == 'transferencia' ? Colors.white : Colors.black87,
+                                color: paymentMethod == 'transferencia'
+                                    ? Colors.white
+                                    : Colors.black87,
                               ),
                             ),
                             selected: paymentMethod == 'transferencia',
@@ -378,7 +415,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                             backgroundColor: const Color(0xFFF1F5F9),
                             onSelected: (selected) {
                               if (selected) {
-                                setModalState(() => paymentMethod = 'transferencia');
+                                setModalState(
+                                  () => paymentMethod = 'transferencia',
+                                );
                               }
                             },
                           ),
@@ -387,7 +426,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Input de teléfono tradicional
                     TextField(
                       controller: phoneController,
                       keyboardType: TextInputType.phone,
@@ -405,7 +443,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 20),
 
-                    // GESTIÓN DE UBICACIÓN POR COORDENADAS (TIPO UBER)
                     Text(
                       'Ubicación del Delivery:',
                       style: GoogleFonts.outfit(
@@ -418,42 +455,51 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
 
                     Row(
                       children: [
-                        // Opción 1: GPS Rápido
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: isLocating
                                 ? null
                                 : () async {
-                                    setModalState(() {
-                                      isLocating = true;
-                                    });
+                                    setModalState(() => isLocating = true);
                                     final pos = await _getCurrentPosition();
                                     if (pos != null) {
-                                      final addr = await _reverseGeocode(pos.latitude, pos.longitude);
+                                      final addr = await _reverseGeocode(
+                                        pos.latitude,
+                                        pos.longitude,
+                                      );
                                       setModalState(() {
-                                        selectedCoordinates = LatLng(pos.latitude, pos.longitude);
+                                        selectedCoordinates = LatLng(
+                                          pos.latitude,
+                                          pos.longitude,
+                                        );
                                         addressText = addr;
                                         addressController.text = addr;
                                       });
                                     } else {
-                                      // Fallback a coordenadas de Formosa Capital centro
-                                      const fallback = LatLng(-26.18500, -58.17417);
-                                      final addr = await _reverseGeocode(fallback.latitude, fallback.longitude);
+                                      const fallback = LatLng(
+                                        -26.18500,
+                                        -58.17417,
+                                      );
+                                      final addr = await _reverseGeocode(
+                                        fallback.latitude,
+                                        fallback.longitude,
+                                      );
                                       setModalState(() {
                                         selectedCoordinates = fallback;
                                         addressText = addr;
                                         addressController.text = addr;
                                       });
                                     }
-                                    setModalState(() {
-                                      isLocating = false;
-                                    });
+                                    setModalState(() => isLocating = false);
                                   },
                             icon: isLocating
                                 ? const SizedBox(
                                     width: 14,
                                     height: 14,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.cyan),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.cyan,
+                                    ),
                                   )
                                 : const Icon(
                                     Icons.my_location,
@@ -477,15 +523,17 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        // Opción 2: Selector con Pin Móvil
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () {
                               _openMapPicker(context, (LatLng location) async {
-                                setModalState(() {
-                                  selectedCoordinates = location;
-                                });
-                                final addr = await _reverseGeocode(location.latitude, location.longitude);
+                                setModalState(
+                                  () => selectedCoordinates = location,
+                                );
+                                final addr = await _reverseGeocode(
+                                  location.latitude,
+                                  location.longitude,
+                                );
                                 setModalState(() {
                                   addressText = addr;
                                   addressController.text = addr;
@@ -517,7 +565,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 8),
 
-                    // Campo de dirección editable
+                    // FIX CRÍTICO: Vinculamos el addressController que estaba ausente
                     TextField(
                       controller: addressController,
                       style: const TextStyle(color: Colors.black),
@@ -525,7 +573,11 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                         labelText: 'Dirección Detallada',
                         labelStyle: const TextStyle(color: Color(0xFF64748B)),
                         suffixIcon: selectedCoordinates != null
-                            ? const Icon(Icons.check_circle_outline, color: Colors.green, size: 20)
+                            ? const Icon(
+                                Icons.check_circle_outline,
+                                color: Colors.green,
+                                size: 20,
+                              )
                             : null,
                         enabledBorder: const UnderlineInputBorder(
                           borderSide: BorderSide(color: Color(0xFFCBD5E1)),
@@ -540,7 +592,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 20),
 
-                    // Selección del Repartidor Premium con Foto y Vehículo
                     Text(
                       'Selecciona tu Repartidor Preferido (Opcional):',
                       style: GoogleFonts.outfit(
@@ -559,8 +610,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                             scrollDirection: Axis.horizontal,
                             children: [
                               GestureDetector(
-                                onTap: () =>
-                                    setModalState(() => preferredDriverId = null),
+                                onTap: () => setModalState(
+                                  () => preferredDriverId = null,
+                                ),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 200),
                                   margin: const EdgeInsets.only(right: 12),
@@ -605,10 +657,12 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                                 final driverName =
                                     driver['full_name'] as String? ?? 'Chofer';
                                 final driverVehicle =
-                                    driver['tipo_vehiculo'] as String? ?? 'Moto';
+                                    driver['tipo_vehiculo'] as String? ??
+                                    'Moto';
                                 final driverAvatar =
                                     driver['avatar_url'] as String?;
-                                final isSelected = preferredDriverId == driverId;
+                                final isSelected =
+                                    preferredDriverId == driverId;
 
                                 return GestureDetector(
                                   onTap: () => setModalState(
@@ -677,7 +731,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 28),
 
-                    // Botón Confirmación Final enviando coordenadas directas y medio de pago
                     SizedBox(
                       width: double.infinity,
                       height: 52,
@@ -685,7 +738,15 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                         onPressed: () async {
                           final ph = phoneController.text.trim();
                           final addr = addressController.text.trim();
-                          if (ph.isEmpty || addr.isEmpty) return;
+                          if (ph.isEmpty || addr.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Por favor, completa el teléfono y la dirección de entrega.'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
 
                           Navigator.pop(context);
 
@@ -701,7 +762,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                             longitude: selectedCoordinates?.longitude,
                           );
 
-                          // Mostrar Modal Lindo de Confirmación de Pedido (Sin Emojis, con Iconos)
                           if (context.mounted) {
                             showDialog(
                               context: context,
@@ -710,7 +770,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                                   backgroundColor: Colors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(24),
-                                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                                    side: const BorderSide(
+                                      color: Color(0xFFE2E8F0),
+                                    ),
                                   ),
                                   title: Column(
                                     children: [
@@ -732,7 +794,8 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                                   ),
                                   content: Column(
                                     mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Detalles del Pedido:',
@@ -743,11 +806,35 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                                         ),
                                       ),
                                       const SizedBox(height: 10),
-                                      _buildDetailRow(Icons.shopping_bag_outlined, 'Producto', product.name),
-                                      _buildDetailRow(Icons.tag_outlined, 'Cantidad', '$orderQuantity Bolsas'),
-                                      _buildDetailRow(Icons.monetization_on_outlined, 'Total', currencyFormatter.format(product.price * orderQuantity)),
-                                      _buildDetailRow(Icons.payments_outlined, 'Pago', paymentMethod == 'efectivo' ? 'Efectivo' : 'Transferencia'),
-                                      _buildDetailRow(Icons.location_on_outlined, 'Dirección', addr),
+                                      _buildDetailRow(
+                                        Icons.shopping_bag_outlined,
+                                        'Producto',
+                                        product.name,
+                                      ),
+                                      _buildDetailRow(
+                                        Icons.tag_outlined,
+                                        'Cantidad',
+                                        '$orderQuantity Bolsas',
+                                      ),
+                                      _buildDetailRow(
+                                        Icons.monetization_on_outlined,
+                                        'Total',
+                                        currencyFormatter.format(
+                                          product.price * orderQuantity,
+                                        ),
+                                      ),
+                                      _buildDetailRow(
+                                        Icons.payments_outlined,
+                                        'Pago',
+                                        paymentMethod == 'efectivo'
+                                            ? 'Efectivo'
+                                            : 'Transferencia',
+                                      ),
+                                      _buildDetailRow(
+                                        Icons.location_on_outlined,
+                                        'Dirección',
+                                        addr,
+                                      ),
                                     ],
                                   ),
                                   actions: [
@@ -759,9 +846,12 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor: Colors.black,
                                             shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
-                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 12,
+                                            ),
                                           ),
                                           child: Text(
                                             'Aceptar',
@@ -816,9 +906,15 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
           Expanded(
             child: RichText(
               text: TextSpan(
-                style: GoogleFonts.openSans(fontSize: 12, color: const Color(0xFF334155)),
+                style: GoogleFonts.openSans(
+                  fontSize: 12,
+                  color: const Color(0xFF334155),
+                ),
                 children: [
-                  TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  TextSpan(
+                    text: '$label: ',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   TextSpan(text: value),
                 ],
               ),
@@ -857,7 +953,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Carrusel 3D Maximizado
             SizedBox(
               height: 380,
               child: PageView.builder(
@@ -865,7 +960,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                 itemCount: _products.length,
                 itemBuilder: (context, index) {
                   double difference = index - _pageOffset;
-
                   double scale = (1 - (difference.abs() * 0.15)).clamp(
                     0.8,
                     1.0,
@@ -916,7 +1010,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                 },
               ),
             ),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(_products.length, (index) {
@@ -934,8 +1027,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
               }),
             ),
             const SizedBox(height: 24),
-
-            // Tarjeta Informativa
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
               child: Container(
@@ -982,7 +1073,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                         ],
                       ),
                     ),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1026,7 +1116,6 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                       ),
                     ),
                     const SizedBox(height: 14),
-
                     ...activeProduct.features.map((feature) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 5.0),
@@ -1049,9 +1138,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                         ),
                       );
                     }).toList(),
-
                     const Divider(color: Color(0xFFE2E8F0), height: 28),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1083,19 +1170,16 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 12,
-                            ),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           child: Text(
-                            'Comprar ahora',
+                            'SOLICITAR PEDIDO',
                             style: GoogleFonts.outfit(
                               fontWeight: FontWeight.bold,
-                              color: Colors.white,
                             ),
                           ),
                         ),

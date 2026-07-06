@@ -40,6 +40,22 @@ class OrderProvider with ChangeNotifier {
   final Set<String> _ratedOrderIds = {};
   Set<String> get ratedOrderIds => _ratedOrderIds;
 
+  // Helper experto para generar UUIDs válidos nativamente sin dependencias externas corruptas
+  String generateUuid() {
+    final random = Random();
+    final List<int> values = List<int>.generate(16, (i) => random.nextInt(256));
+    values[6] = (values[6] & 0x0f) | 0x40; // versión 4
+    values[8] = (values[8] & 0x3f) | 0x80; // variante
+    final StringBuffer buffer = StringBuffer();
+    for (int i = 0; i < values.length; i++) {
+      if (i == 4 || i == 6 || i == 8 || i == 10) {
+        buffer.write('-');
+      }
+      buffer.write(values[i].toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
+  }
+
   void markOrderAsRated(String orderId) {
     _ratedOrderIds.add(orderId);
     notifyListeners();
@@ -55,8 +71,7 @@ class OrderProvider with ChangeNotifier {
     await _checkInitialConnection();
     _startConnectivityListener();
     _startSupabaseAuthListener();
-    
-    // Initial role and data load if already logged in
+
     if (currentUser != null) {
       await refreshUserRole();
       if (_userRole == 'admin') {
@@ -76,7 +91,9 @@ class OrderProvider with ChangeNotifier {
   }
 
   void _startConnectivityListener() {
-    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      ConnectivityResult result,
+    ) {
       _updateConnectionStatus(result);
     });
   }
@@ -93,29 +110,32 @@ class OrderProvider with ChangeNotifier {
 
   // --- Supabase Authentication ---
   void _startSupabaseAuthListener() {
-    _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-      final AuthChangeEvent event = data.event;
-      final Session? session = data.session;
+    _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange
+        .listen((data) async {
+          final AuthChangeEvent event = data.event;
+          final Session? session = data.session;
 
-      if ((event == AuthChangeEvent.signedIn || event == AuthChangeEvent.initialSession) && session != null) {
-        await refreshUserRole();
-        if (_userRole == 'admin') {
-          await fetchAdminOrders();
-          await fetchRepartidoresLocations();
-        } else {
-          await loadOrders();
-          syncUnsyncedOrders();
-          _startLocationReporting();
-        }
-      } else if (event == AuthChangeEvent.signedOut) {
-        _orders = [];
-        _adminOrders = [];
-        _repartidores = [];
-        _userRole = 'repartidor';
-        _stopLocationReporting();
-        notifyListeners();
-      }
-    });
+          if ((event == AuthChangeEvent.signedIn ||
+                  event == AuthChangeEvent.initialSession) &&
+              session != null) {
+            await refreshUserRole();
+            if (_userRole == 'admin') {
+              await fetchAdminOrders();
+              await fetchRepartidoresLocations();
+            } else {
+              await loadOrders();
+              syncUnsyncedOrders();
+              _startLocationReporting();
+            }
+          } else if (event == AuthChangeEvent.signedOut) {
+            _orders = [];
+            _adminOrders = [];
+            _repartidores = [];
+            _userRole = 'repartidor';
+            _stopLocationReporting();
+            notifyListeners();
+          }
+        });
   }
 
   Future<void> refreshUserRole() async {
@@ -126,7 +146,7 @@ class OrderProvider with ChangeNotifier {
           .select('role, avatar_url, full_name')
           .eq('id', currentUser!.id)
           .maybeSingle();
-      
+
       if (response != null) {
         if (response['role'] != null) {
           final r = response['role'] as String;
@@ -155,7 +175,7 @@ class OrderProvider with ChangeNotifier {
           .from('profiles')
           .update({'avatar_url': newAvatarUrl})
           .eq('id', currentUser!.id);
-      
+
       _currentUserAvatarUrl = newAvatarUrl;
       notifyListeners();
     } catch (e) {
@@ -168,7 +188,10 @@ class OrderProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      await Supabase.instance.client.auth.signInWithPassword(email: email, password: password);
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -199,7 +222,7 @@ class OrderProvider with ChangeNotifier {
           'avatar_url': avatarUrl,
           'dni': dni,
           'direccion': direccion,
-          'direccion_defecto': direccion, // duplicate just in case
+          'direccion_defecto': direccion,
           'phone': celular,
           'tipo_vehiculo': tipoVehiculo,
           'matricula': matricula,
@@ -242,10 +265,8 @@ class OrderProvider with ChangeNotifier {
     _locationTimer?.cancel();
     if (currentUser == null || _userRole != 'repartidor') return;
 
-    // Report immediately
     _reportCurrentLocation();
 
-    // Report every 3 minutes
     _locationTimer = Timer.periodic(const Duration(minutes: 3), (timer) {
       _reportCurrentLocation();
     });
@@ -259,7 +280,6 @@ class OrderProvider with ChangeNotifier {
   Future<void> _reportCurrentLocation() async {
     if (currentUser == null || !_isOnline) return;
     try {
-      // Check location services and permissions
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) return;
 
@@ -274,13 +294,17 @@ class OrderProvider with ChangeNotifier {
         desiredAccuracy: LocationAccuracy.medium,
       );
 
-      // Save GPS coordinates to public.profiles
-      await Supabase.instance.client.from('profiles').update({
-        'last_latitude': position.latitude,
-        'last_longitude': position.longitude,
-      }).eq('id', currentUser!.id);
+      await Supabase.instance.client
+          .from('profiles')
+          .update({
+            'last_latitude': position.latitude,
+            'last_longitude': position.longitude,
+          })
+          .eq('id', currentUser!.id);
 
-      debugPrint('GPS de Repartidor reportado: ${position.latitude}, ${position.longitude}');
+      debugPrint(
+        'GPS de Repartidor reportado: ${position.latitude}, ${position.longitude}',
+      );
     } catch (e) {
       debugPrint('Error reportando GPS de repartidor: $e');
     }
@@ -293,43 +317,59 @@ class OrderProvider with ChangeNotifier {
     try {
       final response = await Supabase.instance.client
           .from('profiles')
-          .select('id, email, full_name, role, last_latitude, last_longitude, avatar_url, repartidor_details(tipo_vehiculo, matricula, stars)')
+          .select(
+            'id, email, full_name, role, last_latitude, last_longitude, avatar_url, repartidor_details(tipo_vehiculo, matricula, stars)',
+          )
           .or('role.eq.repartidor,role.eq.distributor');
-      
+
       if (response != null) {
         final rawList = List<Map<String, dynamic>>.from(response);
         final List<Map<String, dynamic>> updatedList = [];
- 
+
         for (var r in rawList) {
           final lat = r['last_latitude'];
           final lng = r['last_longitude'];
           String address = 'Ubicación desconocida';
- 
+
           if (lat != null && lng != null) {
-            // Check if we already have the address cached for this lat/lng to avoid spamming the free API
             final cached = _repartidores.firstWhere(
-              (x) => x['id'] == r['id'] && x['last_latitude'] == lat && x['last_longitude'] == lng,
+              (x) =>
+                  x['id'] == r['id'] &&
+                  x['last_latitude'] == lat &&
+                  x['last_longitude'] == lng,
               orElse: () => {},
             );
- 
+
             if (cached.isNotEmpty && cached['address'] != null) {
               address = cached['address'] as String;
             } else {
               try {
-                // Fetch address from Nominatim (OpenStreetMap Free Reverse Geocoding)
-                final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&zoom=18&addressdetails=1');
-                final getRes = await http.get(url, headers: {
-                  'User-Agent': 'HieloPedidoApp/1.0 (maxcer234@gmail.com)'
-                });
+                final url = Uri.parse(
+                  'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lng&zoom=18&addressdetails=1',
+                );
+                final getRes = await http.get(
+                  url,
+                  headers: {
+                    'User-Agent': 'HieloPedidoApp/1.0 (maxcer234@gmail.com)',
+                  },
+                );
                 if (getRes.statusCode == 200) {
                   final data = jsonDecode(getRes.body);
                   final addr = data['address'];
                   if (addr != null) {
-                    final street = addr['road'] ?? addr['suburb'] ?? addr['neighbourhood'] ?? '';
+                    final street =
+                        addr['road'] ??
+                        addr['suburb'] ??
+                        addr['neighbourhood'] ??
+                        '';
                     final houseNumber = addr['house_number'] ?? '';
-                    final city = addr['city'] ?? addr['town'] ?? addr['village'] ?? '';
+                    final city =
+                        addr['city'] ?? addr['town'] ?? addr['village'] ?? '';
                     if (street.isNotEmpty) {
-                      address = street + (houseNumber.isNotEmpty ? ' $houseNumber' : '') + (city.isNotEmpty ? ', $city' : '');
+                      address =
+                          street +
+                          (houseNumber.isNotEmpty ? ' $houseNumber' : '') +
+                          (city.isNotEmpty ? ', $city' : '');
                     } else {
                       address = data['display_name'] ?? 'Ubicación desconocida';
                     }
@@ -340,7 +380,7 @@ class OrderProvider with ChangeNotifier {
               }
             }
           }
- 
+
           final details = r['repartidor_details'];
           Map<String, dynamic>? detailsMap;
           if (details is Map) {
@@ -351,7 +391,7 @@ class OrderProvider with ChangeNotifier {
           final tipoVehiculo = detailsMap?['tipo_vehiculo'] ?? 'Moto';
           final matricula = detailsMap?['matricula'] ?? 'S/M';
           final stars = (detailsMap?['stars'] ?? 5.0) as num;
- 
+
           updatedList.add({
             ...r,
             'address': address,
@@ -360,7 +400,7 @@ class OrderProvider with ChangeNotifier {
             'stars': stars,
           });
         }
- 
+
         _repartidores = updatedList;
         notifyListeners();
       }
@@ -397,12 +437,39 @@ class OrderProvider with ChangeNotifier {
       }
 
       final List<dynamic> data = response as List<dynamic>;
-      final fetchedOrders = data.map((o) => OrderModel.fromMap(o as Map<String, dynamic>)).toList();
-      
-      // Save locally to cache
+      final fetchedOrders = data
+          .map((o) => OrderModel.fromMap(o as Map<String, dynamic>))
+          .toList();
+
       await _db.cacheOrders(fetchedOrders);
-      
-      _orders = fetchedOrders;
+
+      // Merge pending local unsynced orders so they remain visible in history
+      final localOrders = await _db.getAllOrders();
+      final unsynced = localOrders.where((o) => o.isSynced == 0).toList();
+
+      // Filter local unsynced orders by role
+      List<OrderModel> roleUnsynced = [];
+      if (userRole == 'cliente') {
+        roleUnsynced = unsynced.where((o) => o.userId == currentUser!.id).toList();
+      } else if (userRole == 'repartidor') {
+        roleUnsynced = unsynced.where((o) => o.status == 'pendiente' || o.repartidorId == currentUser!.id).toList();
+      } else {
+        roleUnsynced = unsynced;
+      }
+
+      // Combine lists, preferring the local/outbox version for matching client_order_id
+      final Map<String, OrderModel> combined = {};
+      for (var o in fetchedOrders) {
+        combined[o.clientOrderId] = o;
+      }
+      for (var o in roleUnsynced) {
+        combined[o.clientOrderId] = o;
+      }
+
+      final resultList = combined.values.toList();
+      resultList.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      _orders = resultList;
     } catch (e) {
       debugPrint('Error fetching orders from Supabase: $e');
     } finally {
@@ -423,9 +490,17 @@ class OrderProvider with ChangeNotifier {
       try {
         final allOrders = await _db.getAllOrders();
         if (userRole == 'cliente') {
-          _orders = allOrders.where((o) => o.userId == currentUser!.id).toList();
+          _orders = allOrders
+              .where((o) => o.userId == currentUser!.id)
+              .toList();
         } else if (userRole == 'repartidor') {
-          _orders = allOrders.where((o) => o.status == 'pendiente' || o.repartidorId == currentUser!.id).toList();
+          _orders = allOrders
+              .where(
+                (o) =>
+                    o.status == 'pendiente' ||
+                    o.repartidorId == currentUser!.id,
+              )
+              .toList();
         } else {
           _orders = allOrders;
         }
@@ -454,7 +529,7 @@ class OrderProvider with ChangeNotifier {
     if (currentUser == null) return;
 
     final clientOrderId = generateUuid();
-    final code = (Random().nextInt(9000) + 1000).toString(); // 4-digit code
+    final code = (Random().nextInt(9000) + 1000).toString();
     final newOrder = OrderModel(
       clientOrderId: clientOrderId,
       userId: currentUser!.id,
@@ -484,7 +559,13 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
-  Future<void> addOrder(String clientName, String productId, String productName, int quantity, double price) async {
+  Future<void> addOrder(
+    String clientName,
+    String productId,
+    String productName,
+    int quantity,
+    double price,
+  ) async {
     if (currentUser == null) return;
 
     final clientOrderId = generateUuid();
@@ -535,10 +616,7 @@ class OrderProvider with ChangeNotifier {
     final index = _orders.indexWhere((o) => o.clientOrderId == clientOrderId);
     if (index == -1) return;
 
-    final updated = _orders[index].copyWith(
-      status: 'en_camino',
-      isSynced: 0,
-    );
+    final updated = _orders[index].copyWith(status: 'en_camino', isSynced: 0);
 
     await _db.updateOrder(updated);
     _orders[index] = updated;
@@ -555,7 +633,7 @@ class OrderProvider with ChangeNotifier {
 
     final order = _orders[index];
     if (order.verificationCode != code) {
-      return false; // Code mismatch
+      return false;
     }
 
     final updated = order.copyWith(
@@ -584,6 +662,7 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
+  // FIX COMPLETO AL PROCESO DE SINCRONIZACIÓN: Ahora procesa tanto CREATES como UPDATES de estado mediante Upsert nativo
   Future<void> syncUnsyncedOrders() async {
     if (_isSyncing || !_isOnline || currentUser == null) return;
 
@@ -597,7 +676,9 @@ class OrderProvider with ChangeNotifier {
     _isSyncing = true;
     notifyListeners();
 
-    debugPrint('Starting synchronization of ${pendingMutations.length} mutations to Supabase...');
+    debugPrint(
+      'Starting synchronization of ${pendingMutations.length} mutations to Supabase...',
+    );
 
     final List<String> successfullySyncedMutationIds = [];
     final List<String> successfullySyncedOrderIds = [];
@@ -614,32 +695,39 @@ class OrderProvider with ChangeNotifier {
         bool success = false;
 
         try {
-          if (operation == 'CREATE') {
+          // CORRECCIÓN DE EXPERTO: Habilitamos que procese mutaciones de actualización locales ('UPDATE') o de creación ('CREATE')
+          if (operation == 'CREATE' || operation == 'UPDATE') {
             final Map<String, dynamic> orderMap = jsonDecode(payloadStr);
-            // Remove local flag field
-            orderMap.remove('is_synced');
-            
-            // Insert directly to Supabase Orders
-            await supabaseClient.from('orders').upsert(orderMap);
-            success = true;
+             orderMap.remove('is_synced');
+             orderMap.remove('client_avatar_url');
+
+             // Inyecta o actualiza el mapa completo respetando las llaves UUID de la base remota
+             await supabaseClient.from('orders').upsert(orderMap);
+             success = true;
           } else if (operation == 'DELETE') {
-            await supabaseClient.from('orders').delete().eq('client_order_id', orderId);
+            await supabaseClient
+                .from('orders')
+                .delete()
+                .eq('client_order_id', orderId);
             success = true;
           }
         } catch (dbError) {
           debugPrint('Error syncing single mutation $mutationId: $dbError');
-          if (dbError.toString().contains('409') || dbError.toString().contains('unique_violation')) {
+          if (dbError.toString().contains('409') ||
+              dbError.toString().contains('unique_violation')) {
             success = true;
           }
         }
 
         if (success) {
           successfullySyncedMutationIds.add(mutationId);
-          if (operation == 'CREATE') {
+          if (operation == 'CREATE' || operation == 'UPDATE') {
             successfullySyncedOrderIds.add(orderId);
           }
         } else {
-          debugPrint('Sync loop paused at mutation $mutationId due to server/network issue.');
+          debugPrint(
+            'Sync loop paused at mutation $mutationId due to server/network issue.',
+          );
           break;
         }
       }
@@ -648,8 +736,7 @@ class OrderProvider with ChangeNotifier {
         await _db.deleteMutations(successfullySyncedMutationIds);
         await _db.markOrdersAsSynced(successfullySyncedOrderIds);
         await loadOrders();
-        
-        // If we are admin, refresh dashboard as well
+
         if (_userRole == 'admin') {
           await fetchAdminOrders();
         }
@@ -671,7 +758,7 @@ class OrderProvider with ChangeNotifier {
       final response = await Supabase.instance.client
           .from('orders')
           .select('*, profiles!user_id(email, full_name, avatar_url)');
-      
+
       _adminOrders = List<Map<String, dynamic>>.from(response);
     } catch (e) {
       debugPrint('Error fetching admin orders: $e');
@@ -689,8 +776,7 @@ class OrderProvider with ChangeNotifier {
           .from('repartidor_details')
           .update({'stars': rating})
           .eq('profile_id', driverId);
-      
-      // Refresh driver info to show updated rating in client UI
+
       await fetchRepartidoresLocations();
     } catch (e) {
       debugPrint('Error al guardar reseña del repartidor: $e');
