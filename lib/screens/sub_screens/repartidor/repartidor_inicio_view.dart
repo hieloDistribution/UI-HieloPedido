@@ -377,26 +377,36 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
                                           ),
                                         ),
                                       ),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            activeOrder.status == 'aceptado'
-                                                ? 'Deslizar para iniciar'
-                                                : 'Ingresar Código',
-                                            style: const TextStyle(
-                                              color: cyanCustom,
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
+                                      GestureDetector(
+                                        onTap: () {
+                                          if (activeOrder!.status == 'en_camino') {
+                                            setState(() {
+                                              _activeVerificationOrderId =
+                                                  activeOrder!.clientOrderId;
+                                            });
+                                          }
+                                        },
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              activeOrder.status == 'aceptado'
+                                                  ? 'Deslizar para iniciar'
+                                                  : 'Ingresar Código',
+                                              style: const TextStyle(
+                                                color: cyanCustom,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          const Icon(
-                                            Icons.chevron_right,
-                                            color: cyanCustom,
-                                            size: 18,
-                                          ),
-                                        ],
+                                            const SizedBox(width: 4),
+                                            const Icon(
+                                              Icons.chevron_right,
+                                              color: cyanCustom,
+                                              size: 18,
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),

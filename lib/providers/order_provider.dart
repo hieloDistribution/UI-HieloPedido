@@ -702,7 +702,14 @@ class OrderProvider with ChangeNotifier {
              orderMap.remove('client_avatar_url');
 
              // Inyecta o actualiza el mapa completo respetando las llaves UUID de la base remota
-             await supabaseClient.from('orders').upsert(orderMap);
+             if (orderMap['user_id'] == currentUser!.id) {
+               await supabaseClient.from('orders').upsert(orderMap);
+             } else {
+               await supabaseClient
+                   .from('orders')
+                   .update(orderMap)
+                   .eq('client_order_id', orderId);
+             }
              success = true;
           } else if (operation == 'DELETE') {
             await supabaseClient
