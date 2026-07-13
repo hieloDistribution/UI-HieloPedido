@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../../providers/order_provider.dart';
 import '../../../models/order_model.dart';
 import '../shared/widgets/build_avatar_helper.dart';
@@ -20,6 +21,7 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
     (_) => TextEditingController(),
   );
   final List<FocusNode> _otpFocusNodes = List.generate(4, (_) => FocusNode());
+  final _receivedByController = TextEditingController();
 
   static const Color slate50 = Color(0xFFF8FAFC);
   static const Color slate100 = Color(0xFFF1F5F9);
@@ -30,6 +32,142 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
   static const Color cyanCustom = Color(0xFF06B6D4);
 
   @override
+  void initState() {
+    super.initState();
+    _requestLocationPermission();
+  }
+
+  Future<void> _requestLocationPermission() async {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          if (mounted) {
+            _showLocationServiceDialog();
+          }
+          return;
+        }
+
+        LocationPermission permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+          if (permission == LocationPermission.denied) {
+            if (mounted) {
+              _showPermissionDeniedExplanation();
+            }
+            return;
+          }
+        }
+
+        if (permission == LocationPermission.deniedForever) {
+          if (mounted) {
+            _showPermissionDeniedExplanation();
+          }
+          return;
+        }
+      } catch (e) {
+        debugPrint('Error requesting location permission: $e');
+      }
+    });
+  }
+
+  void _showLocationServiceDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.gps_off, color: Colors.amber, size: 28),
+            const SizedBox(width: 10),
+            Text(
+              'GPS Desactivado',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: slate900),
+            ),
+          ],
+        ),
+        content: Text(
+          'Para recibir viajes y reportar tu ubicación en tiempo real al administrador, debes activar el servicio de ubicación (GPS) de tu dispositivo.',
+          style: GoogleFonts.openSans(color: slate700, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Cerrar',
+              style: GoogleFonts.outfit(color: slate400, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await Geolocator.openLocationSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(
+              'Activar GPS',
+              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPermissionDeniedExplanation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.location_off_outlined, color: Colors.redAccent, size: 28),
+            const SizedBox(width: 10),
+            Text(
+              'Permiso de Ubicación',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, color: slate900),
+            ),
+          ],
+        ),
+        content: Text(
+          'Esta aplicación necesita acceder a tu ubicación en tiempo real todo el tiempo para que el administrador pueda conocer tu posición en el mapa, habilitar la geocerca de entregas de hielo y asignarte pedidos cercanos de forma inteligente.',
+          style: GoogleFonts.openSans(color: slate700, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Entendido',
+              style: GoogleFonts.outfit(color: slate400, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await Geolocator.openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(
+              'Configurar Permisos',
+              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   void dispose() {
     for (var controller in _otpControllers) {
       controller.dispose();
@@ -37,6 +175,7 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
     for (var node in _otpFocusNodes) {
       node.dispose();
     }
+    _receivedByController.dispose();
     super.dispose();
   }
 
@@ -69,29 +208,54 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
   }
 
   void _verifyOtpCode(OrderProvider provider, String orderId) async {
+    final who = _receivedByController.text.trim();
+    if (who.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Por favor, escribe el nombre de la persona que recibe.'),
+          backgroundColor: Colors.amber,
+        ),
+      );
+      return;
+    }
+
     String enteredCode = _otpControllers.map((c) => c.text).join();
     if (enteredCode.length < 4) return;
 
-    final success = await provider.confirmDelivery(orderId, enteredCode);
-    if (mounted) {
-      if (success) {
+    try {
+      final success = await provider.confirmDelivery(orderId, enteredCode, who);
+      if (mounted) {
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('¡Entrega validada con éxito! 🎉'),
+              backgroundColor: Colors.teal,
+            ),
+          );
+          setState(() {
+            _activeVerificationOrderId = null;
+            _receivedByController.clear();
+            for (var c in _otpControllers) {
+              c.clear();
+            }
+          });
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Código incorrecto. Verifica con el cliente.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        String errorMsg = e.toString().replaceAll('Exception:', '').trim();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('¡Entrega validada con éxito! 🎉'),
-            backgroundColor: Colors.teal,
-          ),
-        );
-        setState(() {
-          _activeVerificationOrderId = null;
-          for (var c in _otpControllers) {
-            c.clear();
-          }
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Código incorrecto. Verifica con el cliente.'),
+          SnackBar(
+            content: Text('Error al entregar: $errorMsg'),
             backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -170,7 +334,7 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
     return Scaffold(
       backgroundColor: slate50,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(20.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -284,7 +448,7 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
                 ],
               ),
 
-              const Spacer(),
+              const SizedBox(height: 24),
 
               // SECCIÓN INTERACTIVA INFERIOR CORREGIDA
               if (activeOrder != null) ...[
@@ -486,6 +650,33 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
                                 ],
                               ),
                               const SizedBox(height: 12),
+                              TextField(
+                                controller: _receivedByController,
+                                style: GoogleFonts.outfit(color: slate900, fontSize: 14),
+                                decoration: InputDecoration(
+                                  labelText: '¿Quién recibe el producto?',
+                                  labelStyle: GoogleFonts.outfit(color: slate400, fontSize: 13),
+                                  hintText: 'Ej: Juan (Empleado), Carlos (Cajero)',
+                                  hintStyle: GoogleFonts.outfit(color: slate400.withOpacity(0.5), fontSize: 12),
+                                  prefixIcon: const Icon(Icons.person_outline, color: cyanCustom, size: 20),
+                                  filled: true,
+                                  fillColor: slate50,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: slate200),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: slate200),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: cyanCustom, width: 1.5),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceEvenly,

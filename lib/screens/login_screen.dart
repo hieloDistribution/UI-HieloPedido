@@ -4,7 +4,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 import '../providers/order_provider.dart';
-import 'register_screen.dart'; // Import register screen for navigation
+import 'register_screen.dart';
+import 'sub_screens/shared/widgets/success_overlay_dialog.dart'; // Import register screen for navigation
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -39,29 +40,19 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF1E293B),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-              side: const BorderSide(color: Colors.white10),
-            ),
-            title: Text(
-              'Ocurrió un error',
-              style: GoogleFonts.inter(fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            content: Text(
-              e.toString().replaceAll('Exception:', '').trim(),
-              style: GoogleFonts.openSans(color: Colors.white70),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Entendido', style: TextStyle(color: Colors.cyanAccent)),
-              )
-            ],
-          ),
+        String errorMsg = e.toString().replaceAll('Exception:', '').trim();
+        final lower = errorMsg.toLowerCase();
+        if (lower.contains('invalid login credentials') || lower.contains('invalid_credentials')) {
+          errorMsg = 'El correo o la contraseña son incorrectos. Por favor, verifica tus datos.';
+        } else if (lower.contains('email not confirmed')) {
+          errorMsg = 'Tu cuenta aún no ha sido confirmada. Revisa tu bandeja de entrada.';
+        } else if (lower.contains('network_error') || lower.contains('socketexception') || lower.contains('connection timed out')) {
+          errorMsg = 'No se pudo establecer conexión con el servidor. Verifica tu internet o el firewall de la computadora.';
+        }
+        showPremiumErrorDialog(
+          context,
+          title: 'Error de Inicio de Sesión',
+          message: errorMsg,
         );
       }
     }
@@ -323,11 +314,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             await provider.loginWithGoogle();
                           } catch (e) {
                             if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Error de Google Auth: ${e.toString()}'),
-                                  backgroundColor: Colors.redAccent,
-                                ),
+                              showPremiumErrorDialog(
+                                context,
+                                title: 'Error de Google Auth',
+                                message: e.toString().replaceAll('Exception:', '').trim(),
                               );
                             }
                           }

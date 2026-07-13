@@ -14,9 +14,17 @@ class ClienteInicioView extends StatelessWidget {
     final provider = Provider.of<OrderProvider>(context);
     final user = provider.currentUser;
 
-    // Find any active order that is accepted or en_route
+    final String nombreNegocio =
+        provider.currentUserFullName != null &&
+            provider.currentUserFullName!.contains('(')
+        ? provider.currentUserFullName!
+        : "Establecimiento Mayorista";
+
+    final String nombreDuenio =
+        provider.currentUserFullName ?? user?.email ?? 'Administrador';
+
     final activeOrder = provider.orders.firstWhere(
-      (o) => o.status == 'aceptado' || o.status == 'en_camino',
+      (o) => o.status == 'pendiente' || o.status == 'aceptado' || o.status == 'en_camino',
       orElse: () => OrderModel(
         clientOrderId: '',
         userId: '',
@@ -29,74 +37,157 @@ class ClienteInicioView extends StatelessWidget {
       ),
     );
 
+    final totalPedidosCompletados = provider.orders
+        .where((o) => o.status == 'entregado')
+        .length;
+
     return Scaffold(
-      backgroundColor: const Color(
-        0xFFF8FAFC,
-      ), // Fondo gris muy claro para resaltar las cartas blancas
+      backgroundColor: const Color(0xFFF8FAFC),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // HEADER: Avatar + Saludo
-              Row(
-                children: [
-                  buildAvatarHelper(
-                    provider.currentUserFullName ?? user?.email ?? 'Cliente',
-                    provider.currentUserAvatarUrl,
-                    radius: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Bienvenido,",
-                        style: GoogleFonts.outfit(
-                          color: const Color(0xFF64748B),
-                          fontSize: 13,
+              // --- 1. HEADER CORPORATIVO: INFORMACIÓN DEL LOCAL Y DUEÑO ---
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.02),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        buildAvatarHelper(
+                          nombreDuenio,
+                          provider.currentUserAvatarUrl,
+                          radius: 26,
                         ),
-                      ),
-                      Text(
-                        provider.currentUserFullName?.split(' ').first ??
-                            'Cliente',
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                          color: const Color(0xFF0F172A),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.teal.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.verified,
+                                      color: Colors.teal,
+                                      size: 12,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'PUNTO COMERCIAL FIJO',
+                                      style: GoogleFonts.outfit(
+                                        color: Colors.teal.shade800,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                nombreNegocio,
+                                style: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 19,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                              Text(
+                                "Titular: $nombreDuenio",
+                                style: GoogleFonts.openSans(
+                                  color: const Color(0xFF64748B),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 14),
+                      child: Divider(color: Color(0xFFF1F5F9), thickness: 1.5),
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _buildLocalMetaItem(
+                          Icons.storefront_outlined,
+                          "Rubro",
+                          "Mayorista / Tienda",
+                        ),
+                        _buildLocalMetaItem(
+                          Icons.history_toggle_off,
+                          "Entregas",
+                          "$totalPedidosCompletados completadas",
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-              // BENTO GRID - HERO: Pedido rápido
+              // --- 2. BENTO GRID - HERO: ACCIÓN PRINCIPAL PEDIDO RÁPIDO ---
               GestureDetector(
                 onTap: () => showRequestIceDialog(context, provider),
                 child: Container(
-                  height: 180,
+                  height: 170,
                   width: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors
-                        .black, // Contraste fuerte para el bloque principal
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     borderRadius: BorderRadius.circular(28),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withOpacity(0.12),
+                        blurRadius: 15,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                   child: Stack(
                     children: [
-                      // Imagen de Hielo - Posicionada a la derecha
                       Positioned(
-                        right: -10,
-                        top: 10,
-                        bottom: 10,
+                        right: -15,
+                        top: 5,
+                        bottom: 5,
                         child: Image.asset(
                           'assets/hielo.png',
                           fit: BoxFit.contain,
                         ),
                       ),
-                      // Contenido del CTA
                       Padding(
                         padding: const EdgeInsets.all(24.0),
                         child: Column(
@@ -104,37 +195,38 @@ class ClienteInicioView extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              'Hielo Premium',
+                              'Abastecer Hielo',
                               style: GoogleFonts.outfit(
                                 color: Colors.white,
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 4),
                             Text(
-                              'Listo para tu delivery\ninmediato.',
+                              'Despacho inmediato a la\nubicación de tu local.',
                               style: GoogleFonts.openSans(
-                                color: Colors.white70,
+                                color: const Color(0xFF94A3B8),
                                 fontSize: 13,
+                                height: 1.3,
                               ),
                             ),
                             const SizedBox(height: 16),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
                               decoration: BoxDecoration(
-                                color: Colors.cyanAccent,
+                                color: const Color(0xFF06B6D4),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                'Pedir ahora',
+                                'Generar Pedido ❄️',
                                 style: GoogleFonts.outfit(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
-                                  color: Colors.black,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
@@ -145,50 +237,53 @@ class ClienteInicioView extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 24),
 
-              // PROMOS BENTO GRID
+              // --- 3. SECCIÓN PROMOS Y BENEFICIOS BENTO GRID ---
               Text(
-                'Promociones',
+                'Beneficios de Cuenta Comercial',
                 style: GoogleFonts.outfit(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF0F172A),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
               Row(
                 children: [
                   Expanded(
                     child: _buildBentoPromo(
-                      '2x1',
-                      'Hielo 5kg',
-                      Colors.blue.shade50,
-                      Colors.blue,
+                      'Tarifa Especial',
+                      'Precios congelados por volumen',
+                      const Color(0xFFEFF6FF),
+                      Colors.blue.shade600,
+                      Icons.monetization_on_outlined,
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: _buildBentoPromo(
-                      '15% OFF',
-                      'Primera compra',
-                      Colors.green.shade50,
-                      Colors.green,
+                      'Envío Prioritario',
+                      'Camiones zona centro',
+                      const Color(0xFFECFDF5),
+                      Colors
+                          .green
+                          .shade600, // FIX: Corregido Colors.emerald por Colors.green
+                      Icons.local_shipping_outlined,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
               _buildLargePromo(
-                'Envío Gratis',
-                'En pedidos de 3+ bolsas de hielo',
-                Colors.orange.shade50,
-                Colors.orange,
+                'Logística Fija Automatizada',
+                'Tus coordenadas quedan registradas de forma segura para evitar demoras.',
+                const Color(0xFFFFF7ED),
+                Colors.orange.shade600,
               ),
 
-              // Tarjeta de Código de Entrega (solo si hay pedido activo)
+              // --- 4. TARJETA INMERSIVA DE RUTA Y CÓDIGO (SOLO SI HAY PEDIDO ACTIVO) ---
               if (activeOrder.clientOrderId.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Container(
@@ -197,14 +292,14 @@ class ClienteInicioView extends StatelessWidget {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: Colors.cyan.withOpacity(0.3),
+                      color: const Color(0xFF06B6D4).withOpacity(0.3),
                       width: 1.5,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.cyan.withOpacity(0.06),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        color: const Color(0xFF06B6D4).withOpacity(0.06),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
                       ),
                     ],
                   ),
@@ -219,18 +314,20 @@ class ClienteInicioView extends StatelessWidget {
                               Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: Colors.cyan.withOpacity(0.12),
+                                  color: const Color(
+                                    0xFF06B6D4,
+                                  ).withOpacity(0.1),
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(
                                   Icons.delivery_dining,
-                                  color: Colors.cyan,
+                                  color: Color(0xFF06B6D4),
                                   size: 20,
                                 ),
                               ),
                               const SizedBox(width: 10),
                               Text(
-                                'Código de tu Compra',
+                                'Validación de Entrega',
                                 style: GoogleFonts.outfit(
                                   fontWeight: FontWeight.bold,
                                   color: const Color(0xFF0F172A),
@@ -241,19 +338,20 @@ class ClienteInicioView extends StatelessWidget {
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                              horizontal: 10,
+                              vertical: 5,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.cyan.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
                               activeOrder.status.toUpperCase(),
                               style: GoogleFonts.outfit(
-                                color: Colors.cyan,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 9,
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight
+                                    .bold, // FIX: Corregido 'grandfather' por 'style' integrado nativo
                               ),
                             ),
                           ),
@@ -269,38 +367,64 @@ class ClienteInicioView extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        'Dirección: ${activeOrder.deliveryAddress ?? "S/D"}',
-                        style: GoogleFonts.openSans(
-                          fontSize: 12,
-                          color: const Color(0xFF64748B),
-                        ),
-                      ),
-                      const Divider(color: Color(0xFFE2E8F0), height: 24),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Proporcioná este código al repartidor:',
-                                style: GoogleFonts.openSans(
-                                  fontSize: 11,
-                                  color: const Color(0xFF64748B),
-                                ),
+                          const Icon(
+                            Icons.location_on_outlined,
+                            size: 14,
+                            color: Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Destino Fijo: ${activeOrder.deliveryAddress ?? "Establecimiento registrado"}',
+                              style: GoogleFonts.openSans(
+                                fontSize: 12,
+                                color: const Color(0xFF64748B),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Divider(
+                        color: Color(0xFFF1F5F9),
+                        height: 24,
+                        thickness: 1.5,
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Proporcioná este token al chofer al bajar la carga:',
+                            style: GoogleFonts.openSans(
+                              fontSize: 12,
+                              color: const Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
                                 activeOrder.verificationCode ?? '----',
                                 style: GoogleFonts.outfit(
-                                  fontSize: 26,
+                                  fontSize: 32,
                                   fontWeight: FontWeight.w900,
-                                  color: Colors.cyan,
-                                  letterSpacing: 2.0,
+                                  color: const Color(0xFF06B6D4),
+                                  letterSpacing: 4.0,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ],
                       ),
@@ -315,51 +439,56 @@ class ClienteInicioView extends StatelessWidget {
     );
   }
 
-  // Widget para Promos cuadradas (Bento)
-  Widget _buildBentoPromo(String title, String sub, Color bg, Color accent) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.star_rounded, color: accent, size: 20),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: GoogleFonts.outfit(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: const Color(0xFF0F172A),
+  Widget _buildLocalMetaItem(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF64748B)),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.openSans(
+                fontSize: 10,
+                color: const Color(0xFF94A3B8),
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-          Text(
-            sub,
-            style: GoogleFonts.openSans(
-              fontSize: 11,
-              color: const Color(0xFF475569),
+            Text(
+              value,
+              style: GoogleFonts.outfit(
+                fontSize: 13,
+                color: const Color(0xFF334155),
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 
-  // Widget para Promos horizontales grandes
-  Widget _buildLargePromo(String title, String sub, Color bg, Color accent) {
+  Widget _buildBentoPromo(
+    String title,
+    String sub,
+    Color bg,
+    Color accent,
+    IconData icon,
+  ) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
+      height: 120,
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: accent.withOpacity(0.1)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(Icons.local_shipping_outlined, color: accent, size: 28),
-          const SizedBox(width: 16),
+          Icon(icon, color: accent, size: 22),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -367,18 +496,66 @@ class ClienteInicioView extends StatelessWidget {
                 title,
                 style: GoogleFonts.outfit(
                   fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                  fontSize: 15,
                   color: const Color(0xFF0F172A),
                 ),
               ),
+              const SizedBox(height: 2),
               Text(
                 sub,
                 style: GoogleFonts.openSans(
-                  fontSize: 12,
+                  fontSize: 11,
                   color: const Color(0xFF475569),
+                  height: 1.2,
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLargePromo(String title, String sub, Color bg, Color accent) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: accent.withOpacity(0.2)),
+            ),
+            child: Icon(Icons.pin_drop_outlined, color: accent, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                Text(
+                  sub,
+                  style: GoogleFonts.openSans(
+                    fontSize: 11,
+                    color: const Color(0xFF475569),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

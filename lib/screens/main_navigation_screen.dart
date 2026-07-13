@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
 import 'admin_screen.dart';
-import 'sub_screens/admin/admin_map_view.dart';
 import 'sub_screens/cliente/cliente_inicio_view.dart';
 import 'sub_screens/cliente/cliente_compras_view.dart';
 import 'sub_screens/cliente/cliente_tracking_tab.dart';
@@ -10,9 +9,8 @@ import 'sub_screens/cliente/cliente_orders_history_view.dart';
 import 'sub_screens/repartidor/repartidor_inicio_view.dart';
 import 'sub_screens/repartidor/create_order_view.dart';
 import 'sub_screens/shared/profile_section.dart';
-
-// SOLUCIÓN: Forzamos el import con ruta relativa exacta por si el package name tiene discrepancias
 import 'sub_screens/repartidor/distributor_orders_dashboard.dart';
+import 'sub_screens/repartidor/incoming_order_overlay.dart';
 
 class BottomNavItem {
   final IconData icon;
@@ -27,39 +25,69 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
+  List<Widget>? _screens;
+  String? _cachedRole;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('App resumed: refreshing orders list and syncing local outbox');
+      final provider = Provider.of<OrderProvider>(context, listen: false);
+      provider.loadOrders();
+      provider.syncUnsyncedOrders();
+    }
+  }
+
+  List<Widget> _getScreens(String role) {
+    if (_screens != null && _cachedRole == role) {
+      return _screens!;
+    }
+    _cachedRole = role;
+    _screens = role == 'admin'
+        ? [const AdminScreen(), const ProfileSection()]
+        : (role == 'cliente'
+            ? [
+                const ClienteInicioView(),
+                const ClienteComprasView(),
+                const ClienteTrackingTab(),
+                const ClienteOrdersHistoryView(),
+                const ProfileSection(),
+              ]
+            : [
+                const RepartidorInicioView(),
+                DistributorOrdersDashboard(),
+                const CreateOrderView(),
+                const ProfileSection(),
+              ]);
+    return _screens!;
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
     final userRole = provider.userRole;
-
-    // Listado de pantallas limpio y corregido
-    final List<Widget> screens = userRole == 'admin'
-        ? [const AdminScreen(), const AdminMapView(), const ProfileSection()]
-        : (userRole == 'cliente'
-              ? [
-                  const ClienteInicioView(),
-                  const ClienteComprasView(),
-                  const ClienteTrackingTab(),
-                  const ClienteOrdersHistoryView(),
-                  const ProfileSection(),
-                ]
-              : [
-                  const RepartidorInicioView(),
-                  DistributorOrdersDashboard(), // <-- Ya no tira error de tipo ni de const
-                  const CreateOrderView(),
-                  const ProfileSection(),
-                ]);
+    final screens = _getScreens(userRole);
 
     final List<BottomNavItem> navItems = userRole == 'admin'
         ? [
             BottomNavItem(
               icon: Icons.admin_panel_settings_outlined,
-              label: 'Admin',
+              label: 'Panel',
             ),
-            BottomNavItem(icon: Icons.map_outlined, label: 'Mapa'),
             BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
           ]
         : (userRole == 'cliente'
@@ -98,7 +126,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             ),
           ),
 
-          // Navbar flotante premium
+          // Navbar flotante minimalista en Slate 900
           Positioned(
             bottom: 26,
             left: 20,
@@ -106,7 +134,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             child: Container(
               height: 72,
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A), // Slate 900
+                color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(36),
                 border: Border.all(
                   color: Colors.white.withOpacity(0.08),
@@ -149,6 +177,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               ),
             ),
           ),
+          if (provider.incomingOrderAlert != null)
+            Positioned.fill(
+              child: IncomingOrderOverlay(order: provider.incomingOrderAlert!),
+            ),
         ],
       ),
     );

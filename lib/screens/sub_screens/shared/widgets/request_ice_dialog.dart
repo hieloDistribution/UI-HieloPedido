@@ -4,10 +4,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart' hide Path;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../../../providers/order_provider.dart';
+import 'success_overlay_dialog.dart';
 
 Future<String> _reverseGeocode(double lat, double lng) async {
   try {
@@ -50,7 +50,6 @@ void _showMapLocationPickerDialog(
 ) {
   LatLng? selectedPoint;
   bool isSearching = false;
-  final mapController = MapController();
 
   showDialog(
     context: context,
@@ -67,42 +66,25 @@ void _showMapLocationPickerDialog(
               decoration: BoxDecoration(borderRadius: BorderRadius.circular(24)),
               child: Stack(
                 children: [
-                  FlutterMap(
-                    mapController: mapController,
-                    options: MapOptions(
-                      initialCenter: initialCenter,
-                      initialZoom: 15.0,
-                      interactionOptions: const InteractionOptions(
-                        flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                      ),
-                      // Paneo libre sin límites de cámara
-                      onTap: (tapPosition, point) {
-                        setMapState(() {
-                          selectedPoint = point;
-                        });
-                      },
+                  GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: initialCenter,
+                      zoom: 15.0,
                     ),
-                    children: [
-                      TileLayer(
-                        urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                        subdomains: const ['a', 'b', 'c', 'd'],
-                      ),
-                      if (selectedPoint != null)
-                        MarkerLayer(
-                          markers: [
+                    onTap: (LatLng point) {
+                      setMapState(() {
+                        selectedPoint = point;
+                      });
+                    },
+                    markers: selectedPoint == null
+                        ? {}
+                        : {
                             Marker(
-                              point: selectedPoint!,
-                              width: 40,
-                              height: 40,
-                              child: const Icon(
-                                Icons.location_on,
-                                color: Colors.cyan,
-                                size: 40,
-                              ),
+                              markerId: const MarkerId('selected'),
+                              position: selectedPoint!,
+                              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
                             ),
-                          ],
-                        ),
-                    ],
+                          },
                   ),
                   Positioned(
                     top: 16,
@@ -187,6 +169,7 @@ void _showMapLocationPickerDialog(
 void showRequestIceDialog(
   BuildContext context,
   OrderProvider provider, {
+  String? productId,
   String? productName,
   double? productPrice,
 }) {
@@ -581,25 +564,36 @@ void showRequestIceDialog(
                     );
                     return;
                   }
-                  Navigator.pop(context);
-                  await provider.addClientOrder(
-                    name,
-                    quantity,
-                    price,
-                    addr,
-                    ph,
-                    preferredRepartidorId: selectedRepartidorId,
-                    paymentMethod: paymentMethod,
-                    latitude: selectedLatitude,
-                    longitude: selectedLongitude,
-                  );
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('¡Pedido solicitado con éxito!'),
-                        backgroundColor: Colors.teal,
-                      ),
+
+                  try {
+                    await provider.addClientOrder(
+                      name,
+                      quantity,
+                      price,
+                      addr,
+                      ph,
+                      productId: productId ?? 'hielo_bag',
+                      preferredRepartidorId: selectedRepartidorId,
+                      paymentMethod: paymentMethod,
+                      latitude: selectedLatitude,
+                      longitude: selectedLongitude,
                     );
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                      showPremiumSuccessDialog(
+                        context,
+                        title: 'Pedido Solicitado',
+                        message: 'Tu pedido se ha registrado correctamente y el preventista de la zona será alertado.',
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      showPremiumErrorDialog(
+                        context,
+                        title: 'No se pudo crear el pedido',
+                        message: e.toString().replaceAll('Exception: ', '').trim(),
+                      );
+                    }
                   }
                 },
                 style: ElevatedButton.styleFrom(

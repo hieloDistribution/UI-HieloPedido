@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart' hide Path;
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../providers/order_provider.dart';
 import '../shared/widgets/build_avatar_helper.dart';
@@ -16,7 +15,7 @@ class AdminMapView extends StatefulWidget {
 
 class _AdminMapViewState extends State<AdminMapView> {
   Timer? _timer;
-  final MapController _mapController = MapController();
+  GoogleMapController? _googleMapController;
   Map<String, dynamic>? _selectedRepartidor;
   bool _hasCentered = false;
 
@@ -30,11 +29,19 @@ class _AdminMapViewState extends State<AdminMapView> {
         listen: false,
       ).fetchRepartidoresLocations();
     });
-    _timer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      Provider.of<OrderProvider>(
-        context,
-        listen: false,
-      ).fetchRepartidoresLocations();
+    int counter = 0;
+    _timer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (mounted) {
+        setState(() {});
+        counter += 2;
+        if (counter >= 20) {
+          counter = 0;
+          Provider.of<OrderProvider>(
+            context,
+            listen: false,
+          ).fetchRepartidoresLocations();
+        }
+      }
     });
   }
 
@@ -57,97 +64,61 @@ class _AdminMapViewState extends State<AdminMapView> {
       final lat = repartidores.first['last_latitude'] as double;
       final lng = repartidores.first['last_longitude'] as double;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _mapController.move(LatLng(lat, lng), 14.0);
+        _googleMapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(LatLng(lat, lng), 14.0),
+        );
       });
     }
 
-    final markers = repartidores.map((r) {
+    final Set<Marker> markers = repartidores.map((r) {
       final lat = r['last_latitude'] as double;
       final lng = r['last_longitude'] as double;
       final email = r['email'] as String? ?? 'Sin email';
-      final isSelected =
-          _selectedRepartidor != null && _selectedRepartidor!['id'] == r['id'];
+      final String driverUserId = r['user_id'] as String? ?? email;
+      final isDriverOnline = r['is_online'] as bool? ?? false;
+      final isSelected = _selectedRepartidor != null &&
+          _selectedRepartidor!['user_id'] == r['user_id'];
 
       return Marker(
-        point: LatLng(lat, lng),
-        width: 75,
-        height: 75,
-        child: GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedRepartidor = r;
-            });
-            _mapController.move(LatLng(lat, lng), 15.0);
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Glowing circular profile picture
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF0F172A),
-                  border: Border.all(
-                    color: isSelected ? Colors.cyanAccent : Colors.tealAccent,
-                    width: isSelected ? 3 : 2,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          (isSelected ? Colors.cyanAccent : Colors.tealAccent)
-                              .withOpacity(0.4),
-                      blurRadius: 10,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: buildAvatarHelper(
-                  r['full_name'] ?? email,
-                  r['avatar_url'] as String?,
-                  radius: 18,
-                  fontSize: 11,
-                ),
-              ),
-              // Pointer pin
-              CustomPaint(
-                size: const Size(10, 8),
-                painter: TrianglePainter(
-                  color: isSelected ? Colors.cyanAccent : Colors.tealAccent,
-                ),
-              ),
-            ],
-          ),
+        markerId: MarkerId(driverUserId),
+        position: LatLng(lat, lng),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          isSelected
+              ? BitmapDescriptor.hueYellow
+              : (isDriverOnline ? BitmapDescriptor.hueCyan : BitmapDescriptor.hueRed),
         ),
+        infoWindow: InfoWindow(
+          title: r['full_name'] ?? email,
+          snippet: isDriverOnline ? 'En línea' : 'Desconectado',
+        ),
+        onTap: () {
+          setState(() {
+            _selectedRepartidor = r;
+          });
+          _googleMapController?.animateCamera(
+            CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15.0),
+          );
+        },
       );
-    }).toList();
+    }).toSet();
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: Stack(
         children: [
-          // FlutterMap Layer
+          // GoogleMap Layer
           Positioned.fill(
-            child: FlutterMap(
-              mapController: _mapController,
-              options: const MapOptions(
-                initialCenter: LatLng(-26.18500, -58.17417),
-                initialZoom: 13.0,
-                interactionOptions: InteractionOptions(
-                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                ),
+            child: GoogleMap(
+              initialCameraPosition: const CameraPosition(
+                target: LatLng(-26.18500, -58.17417),
+                zoom: 13.0,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-                  subdomains: const ['a', 'b', 'c', 'd'],
-                  retinaMode: RetinaMode.isHighDensity(context),
-                  userAgentPackageName: 'com.empresa.order_flow',
-                ),
-                MarkerLayer(markers: markers),
-              ],
+              zoomControlsEnabled: false,
+              myLocationButtonEnabled: false,
+              markers: markers,
+              onMapCreated: (controller) {
+                _googleMapController = controller;
+              },
             ),
           ),
 
@@ -226,12 +197,46 @@ class _AdminMapViewState extends State<AdminMapView> {
                         _selectedRepartidor != null &&
                         _selectedRepartidor!['id'] == r['id'];
 
+                    // Eval conexión del preventista
+                    bool isDriverOnline = false;
+                    final lastSeenStr = r['last_seen_at'] as String?;
+                    if (lastSeenStr != null) {
+                      try {
+                        final lastSeen = DateTime.parse(lastSeenStr);
+                        final difference = DateTime.now().toUtc().difference(lastSeen);
+                        isDriverOnline = difference.inSeconds <= 30;
+                      } catch (_) {
+                        isDriverOnline = false;
+                      }
+                    }
+
+                    Widget avatarWidget = buildAvatarHelper(
+                      r['full_name'] ?? email,
+                      r['avatar_url'] as String?,
+                      radius: 16,
+                      fontSize: 10,
+                    );
+
+                    if (!isDriverOnline) {
+                      avatarWidget = ColorFiltered(
+                        colorFilter: const ColorFilter.matrix(<double>[
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0,      0,      0,      1, 0,
+                        ]),
+                        child: avatarWidget,
+                      );
+                    }
+
                     return GestureDetector(
                       onTap: () {
                         setState(() {
                           _selectedRepartidor = r;
                         });
-                        _mapController.move(LatLng(lat, lng), 15.0);
+                        _googleMapController?.animateCamera(
+                          CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15.0),
+                        );
                       },
                       child: Container(
                         margin: const EdgeInsets.only(right: 10),
@@ -242,22 +247,21 @@ class _AdminMapViewState extends State<AdminMapView> {
                         decoration: BoxDecoration(
                           color: isSelected
                               ? Colors.cyanAccent.withOpacity(0.15)
-                              : const Color(0xFF1E293B).withOpacity(0.9),
+                              : isDriverOnline
+                                  ? const Color(0xFF1E293B).withOpacity(0.9)
+                                  : const Color(0xFF0F172A).withOpacity(0.9),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: isSelected
                                 ? Colors.cyanAccent
-                                : Colors.white.withOpacity(0.1),
+                                : isDriverOnline
+                                    ? Colors.white.withOpacity(0.1)
+                                    : Colors.white.withOpacity(0.04),
                           ),
                         ),
                         child: Row(
                            children: [
-                            buildAvatarHelper(
-                              r['full_name'] ?? email,
-                              r['avatar_url'] as String?,
-                              radius: 16,
-                              fontSize: 10,
-                            ),
+                            avatarWidget,
                             const SizedBox(width: 10),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,

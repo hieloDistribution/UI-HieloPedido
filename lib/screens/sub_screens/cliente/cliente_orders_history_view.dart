@@ -35,7 +35,7 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
       decimalDigits: 0,
     );
 
-    // Apply Filter
+    // Filtrado de estados limpio y reactivo
     final List<OrderModel> filteredOrders = provider.orders.where((o) {
       if (_selectedFilter == 'Pendientes') {
         return o.status == 'pendiente' ||
@@ -48,7 +48,7 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC), // Fondo sutil ultra limpio
       appBar: AppBar(
         title: Text(
           'Historial de Pedidos',
@@ -61,18 +61,19 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.black),
+            icon: const Icon(Icons.refresh, color: Color(0xFF0F172A)),
             onPressed: () => provider.loadOrders(),
           ),
         ],
       ),
       body: Column(
         children: [
-          // Filter Chips Row
-          Padding(
+          // Selector de Categorías Superior Minimalista
+          Container(
+            color: Colors.white,
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
-              vertical: 8.0,
+              vertical: 10.0,
             ),
             child: Row(
               children: ['Todos', 'Pendientes', 'Entregados'].map((filter) {
@@ -93,6 +94,11 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
                     selected: isSelected,
                     selectedColor: Colors.black,
                     backgroundColor: const Color(0xFFF1F5F9),
+                    elevation: 0,
+                    side: BorderSide.none,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                     onSelected: (selected) {
                       if (selected) {
                         setState(() {
@@ -109,20 +115,20 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
           Expanded(
             child: provider.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.cyan),
+                    child: CircularProgressIndicator(color: Colors.black),
                   )
                 : filteredOrders.isEmpty
                 ? Center(
                     child: Text(
-                      'No hay pedidos en esta categoría.',
-                      style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
+                      'No hay registros en esta categoría.',
+                      style: GoogleFonts.outfit(
+                        color: const Color(0xFF64748B),
+                        fontSize: 14,
+                      ),
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
+                    padding: const EdgeInsets.all(16),
                     itemCount: filteredOrders.length,
                     itemBuilder: (context, index) {
                       final order = filteredOrders[index];
@@ -130,75 +136,239 @@ class _ClienteOrdersHistoryViewState extends State<ClienteOrdersHistoryView> {
                         'dd/MM/yyyy HH:mm',
                       ).format(order.createdAt);
 
+                      // Lógica de detección de canal de venta (Cliente o Repartidor)
+                      final bool isFieldSale = order.productId != 'hielo_bag';
+
                       Color statusColor = Colors.grey;
                       if (order.status == 'pendiente')
-                        statusColor = Colors.amber;
+                        statusColor = Colors.amber.shade800;
                       if (order.status == 'aceptado') statusColor = Colors.teal;
                       if (order.status == 'en_camino')
-                        statusColor = Colors.cyan;
+                        statusColor = Colors.cyan.shade700;
                       if (order.status == 'entregado')
-                        statusColor = Colors.green;
+                        statusColor = Colors.green.shade700;
 
-                      return Card(
-                        color: Colors.white,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 14),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
                         ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.all(16),
-                          title: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  order.productName,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF0F172A),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Fila Superior: Nombre del Producto e Indicador de Venta Directa
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    order.productName,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF0F172A),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              Text(
-                                currencyFormatter.format(order.total),
-                                style: GoogleFonts.outfit(
-                                  color: const Color(0xFF0F172A),
-                                  fontWeight: FontWeight.bold,
+                                const SizedBox(width: 8),
+                                if (isFieldSale)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.local_shipping_outlined,
+                                          size: 12,
+                                          color: Color(0xFF475569),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'VENTA DE CAMPO',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF475569),
+                                            letterSpacing: 0.3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // Fila Central: Detalles de cantidad, fecha y dirección
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.tag,
+                                  size: 14,
+                                  color: Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${order.quantity} Bolsas',
+                                  style: GoogleFonts.openSans(
+                                    fontSize: 13,
+                                    color: const Color(0xFF334155),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                const Icon(
+                                  Icons.access_time,
+                                  size: 14,
+                                  color: Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  formattedDate,
+                                  style: GoogleFonts.openSans(
+                                    fontSize: 13,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.pin_drop_outlined,
+                                  size: 14,
+                                  color: Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    order.deliveryAddress ??
+                                        "Entrega en Local Comercial",
+                                    style: GoogleFonts.openSans(
+                                      fontSize: 12,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            // Bloque Condicional: Renderiza quién firmó la entrega física del hielo
+                            if (order.receivedBy != null &&
+                                order.receivedBy!.isNotEmpty) ...[
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: Divider(
+                                  color: Color(0xFFF1F5F9),
+                                  thickness: 1,
                                 ),
                               ),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.assignment_turned_in_outlined,
+                                    size: 14,
+                                    color: Colors.green.shade700,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Recibido por Físico: ',
+                                    style: GoogleFonts.openSans(
+                                      fontSize: 12,
+                                      color: const Color(0xFF475569),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      order.receivedBy!,
+                                      style: GoogleFonts.openSans(
+                                        fontSize: 12,
+                                        color: const Color(0xFF0F172A),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ],
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 8.0),
-                            child: Text(
-                              'Cantidad: ${order.quantity} | Dirección: ${order.deliveryAddress ?? "S/D"}\nFecha: $formattedDate',
-                              style: GoogleFonts.outfit(
-                                color: const Color(0xFF475569),
-                                fontSize: 13,
-                                height: 1.4,
+
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 10.0),
+                              child: Divider(
+                                color: Color(0xFFF1F5F9),
+                                thickness: 1,
                               ),
                             ),
-                          ),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
+
+                            // Fila Inferior: Precio Total y Estado de Entrega Estilizado
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Monto Total Carga',
+                                      style: GoogleFonts.outfit(
+                                        color: const Color(0xFF94A3B8),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    Text(
+                                      currencyFormatter.format(order.total),
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF0F172A),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: statusColor.withOpacity(0.15),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    order.status.toUpperCase(),
+                                    style: GoogleFonts.outfit(
+                                      color: statusColor,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 11,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              order.status.toUpperCase(),
-                              style: GoogleFonts.outfit(
-                                color: statusColor,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
+                          ],
                         ),
                       );
                     },

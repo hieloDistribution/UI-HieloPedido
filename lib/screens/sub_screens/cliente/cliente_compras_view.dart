@@ -4,29 +4,33 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../../../providers/order_provider.dart';
 import '../shared/widgets/build_avatar_helper.dart';
+import '../shared/widgets/success_overlay_dialog.dart';
 
 // --- IceProduct model for Carousel ---
 class IceProduct {
+  final String id;
   final String name;
   final String weight;
   final double price;
   final String description;
   final List<String> features;
   final String promoBadge;
+  final String businessRecommendation;
 
   const IceProduct({
+    required this.id,
     required this.name,
     required this.weight,
     required this.price,
     required this.description,
     required this.features,
     required this.promoBadge,
+    required this.businessRecommendation,
   });
 }
 
@@ -41,47 +45,117 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
   final PageController _pageController = PageController(viewportFraction: 0.85);
   double _pageOffset = 0.0;
 
-  final List<IceProduct> _products = const [
+  final List<IceProduct> _staticProducts = const [
     IceProduct(
+      id: "PROD-ICE-002",
       name: "Bolsa de Hielo Premium 5kg",
       weight: "5 kg",
-      price: 15000.0,
+      price: 1500.0,
       description:
-          "Hielo de agua purificada, filtrado por ósmosis inversa. Cilindros compactos y cristalinos de larga duración, ideales para bebidas y refrigeradores familiares.",
+          "Hielo de agua purificada, filtrado por ósmosis inversa. Cilindros compactos y cristalinos de larga duración, ideales para la conservación en heladeras comerciales.",
       features: [
         "Rolito Macizo",
         "Purificación por Ósmosis",
         "Bolsa Hermética Reforzada",
       ],
       promoBadge: "Más Vendido",
+      businessRecommendation:
+          "Ideal para tu tienda: Formato de alta rotación. Recomendado para autoservicios y minimárquets por su fácil almacenamiento y demanda diaria constante.",
     ),
     IceProduct(
+      id: "PROD-ICE-003",
       name: "Bolsa de Hielo Familiar 10kg",
       weight: "10 kg",
-      price: 25000.0,
+      price: 2500.0,
       description:
-          "La medida perfecta para tus reuniones y asados del fin de semana. Hielo de alta densidad que mantiene el frío por mucho más tiempo sin diluir tus bebidas.",
+          "La medida perfecta para abastecimiento a gran escala. Hielo de alta densidad que mantiene el frío por mucho más tiempo, optimizando el rendimiento de conservadoras industriales.",
       features: [
-        "Formato Ahorro",
-        "Ideal para Conservadoras",
-        "Cristalino y Puro",
+        "Formato Ahorro Mayorista",
+        "Ideal para Gastronomía",
+        "Cristalino de Larga Duración",
       ],
       promoBadge: "Mejor Valor",
+      businessRecommendation:
+          "Optimizado para tu local: Margen de ganancia maximizado. El favorito de restaurantes, bares y depósitos por su excelente rendimiento térmico por kilo.",
     ),
     IceProduct(
+      id: "PROD-ICE-004",
       name: "Hielo Triturado Premium 8kg",
       weight: "8 kg",
-      price: 20000.0,
+      price: 2000.0,
       description:
-          "Especialmente diseñado para coctelería, jugos y licuados. Granulación uniforme de fácil manejo para enfriar copas y servir directo.",
+          "Especialmente diseñado para coctelería, jugos y enfriamiento instantáneo de barras. Granulación uniforme de fácil manejo para despacho inmediato.",
       features: [
-        "Textura Especial Cocteles",
+        "Textura Especial Barra",
         "Fácil de Servir",
-        "Enfriamiento Instantáneo",
+        "Enfriamiento de Alta Velocidad",
       ],
       promoBadge: "Especial Barra",
+      businessRecommendation:
+          "Recomendado para tu rubro: Producto de nicho premium. Excelente opción si tu comercio cuenta con barra de tragos o expendio de jugos frescos.",
     ),
   ];
+
+  List<IceProduct> _getProducts(OrderProvider orderProvider) {
+    if (orderProvider.catalogProducts.isNotEmpty) {
+      return orderProvider.catalogProducts.map((item) {
+        final id = item['id'] as String? ?? '';
+        final name = item['name'] as String? ?? 'Hielo';
+        final price = (item['price'] as num?)?.toDouble() ?? 0.0;
+        final weightKg = (item['weightKg'] as num?)?.toDouble() ?? 5.0;
+
+        String description = "Hielo de agua purificada, filtrado por ósmosis inversa. Cilindros compactos y cristalinos de larga duración.";
+        String weight = "${weightKg.toStringAsFixed(0)} kg";
+        List<String> features = ["Hielo Cristalino", "Agua Purificada"];
+        String promoBadge = "Destacado";
+        String businessRecommendation = "Recomendado para todo tipo de comercios.";
+
+        if (id == 'PROD-ICE-001') {
+          description = 'Saco de 10 kg con 5 bolsas individuales de 2 kg. Perfecto para enfriadores medianos y venta directa.';
+          weight = '10 kg';
+          features = ['Bolsas individuales', 'Fácil dosificación', 'Ideal para camping'];
+          promoBadge = 'Familiar';
+          businessRecommendation = 'Recomendado para almacenes y minimercados con alta rotación.';
+        } else if (id == 'PROD-ICE-002') {
+          description = 'Bolsa de cubos macizos de 5 kg. Hielo cristalino de disolución lenta.';
+          weight = '5 kg';
+          features = ['Disolución lenta', '100% agua filtrada', 'Cubos macizos'];
+          promoBadge = 'Más Vendido';
+          businessRecommendation = 'Recomendado para bares, restaurantes y boliches.';
+        } else if (id == 'PROD-ICE-003') {
+          description = 'Bolsa de hielo molido de 10 kg. Hielo de alta densidad que mantiene el frío por mucho más tiempo.';
+          weight = '10 kg';
+          features = ['Enfriado rápido', 'Fácil de moldear', 'Ideal para coctelería'];
+          promoBadge = 'Especial Tragos';
+          businessRecommendation = 'Excelente opción para coctelería fina y expendio de jugos.';
+        } else if (id == 'PROD-ICE-004') {
+          description = 'Bolsa de hielo en escamas de 15 kg. Excelente cobertura para exhibición de productos.';
+          weight = '15 kg';
+          features = ['Gran superficie de contacto', 'Ideal pescaderías', 'Duradero'];
+          promoBadge = 'Industrial';
+          businessRecommendation = 'Recomendado para pescaderías, buffets y eventos gastronómicos.';
+        } else if (id == 'hielo_bag') {
+          description = 'Bolsa de Hielo Estándar de 5 kg. Versátil y práctica.';
+          weight = '5 kg';
+          features = ['Fácil manejo', 'Hielo cristalino'];
+          promoBadge = 'Estándar';
+          businessRecommendation = 'La opción más versátil para tener stock en cualquier momento.';
+        }
+
+        return IceProduct(
+          id: id,
+          name: name,
+          weight: weight,
+          price: price,
+          description: description,
+          features: features,
+          promoBadge: promoBadge,
+          businessRecommendation: businessRecommendation,
+        );
+      }).toList();
+    }
+    return _staticProducts;
+  }
 
   @override
   void initState() {
@@ -101,7 +175,8 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
     super.dispose();
   }
 
-  int get _currentPage => _pageOffset.round().clamp(0, _products.length - 1);
+  int _getCurrentPage(List<IceProduct> products) =>
+      _pageOffset.round().clamp(0, products.length - 1);
 
   // Helper de Geocodificación Inversa
   Future<String> _reverseGeocode(double lat, double lng) async {
@@ -141,7 +216,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
     return await Geolocator.getCurrentPosition();
   }
 
-  // --- Sub-pantalla interactiva de Mapa tipo UBER para elegir Ubicación ---
+  // Sub-pantalla interactiva de Mapa tipo UBER para elegir Ubicación
   void _openMapPicker(
     BuildContext context,
     Function(LatLng) onLocationSelected,
@@ -167,26 +242,16 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
         ),
         body: Stack(
           children: [
-            FlutterMap(
-              options: MapOptions(
-                initialCenter: centerPosition,
-                initialZoom: 15.0,
-                interactionOptions: const InteractionOptions(
-                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                ),
-                onPositionChanged: (position, hasGesture) {
-                  if (hasGesture && position.center != null) {
-                    centerPosition = position.center!;
-                  }
-                },
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: centerPosition,
+                zoom: 15.0,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                  subdomains: const ['a', 'b', 'c', 'd'],
-                ),
-              ],
+              zoomControlsEnabled: false,
+              myLocationButtonEnabled: false,
+              onCameraMove: (position) {
+                centerPosition = position.target;
+              },
             ),
             Center(
               child: Padding(
@@ -246,10 +311,20 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
 
     int orderQuantity = 1;
     String? preferredDriverId;
+
     LatLng? selectedCoordinates;
-    String addressText = '';
+    if (provider.businessLatitude != null &&
+        provider.businessLongitude != null) {
+      selectedCoordinates = LatLng(
+        provider.businessLatitude!,
+        provider.businessLongitude!,
+      );
+    }
+
+    String addressText = provider.currentUser?.userMetadata?['direccion'] ?? '';
     String paymentMethod = 'efectivo';
     bool isLocating = false;
+    bool forceCustomLocation = false;
 
     final phoneController = TextEditingController(
       text:
@@ -257,7 +332,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
           provider.currentUser?.userMetadata?['celular'] ??
           '',
     );
-    final addressController = TextEditingController();
+    final addressController = TextEditingController(text: addressText);
 
     showModalBottomSheet(
       context: context,
@@ -288,9 +363,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Confirmar Pedido',
+                      'Confirmar Compra Mayorista',
                       style: GoogleFonts.outfit(
-                        fontSize: 22,
+                        fontSize: 20,
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFF0F172A),
                       ),
@@ -299,8 +374,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     Text(
                       '${product.name} • ${currencyFormatter.format(product.price)}',
                       style: GoogleFonts.openSans(
-                        color: Colors.teal,
+                        color: Colors.cyan.shade700,
                         fontWeight: FontWeight.w600,
+                        fontSize: 13,
                       ),
                     ),
                     const Divider(height: 24, color: Color(0xFFE2E8F0)),
@@ -349,7 +425,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Método de pago
+                    // Medio de pago
                     Text(
                       'Medio de Pago:',
                       style: GoogleFonts.outfit(
@@ -384,9 +460,8 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                             selectedColor: Colors.black,
                             backgroundColor: const Color(0xFFF1F5F9),
                             onSelected: (selected) {
-                              if (selected) {
+                              if (selected)
                                 setModalState(() => paymentMethod = 'efectivo');
-                              }
                             },
                           ),
                         ),
@@ -414,11 +489,10 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                             selectedColor: Colors.black,
                             backgroundColor: const Color(0xFFF1F5F9),
                             onSelected: (selected) {
-                              if (selected) {
+                              if (selected)
                                 setModalState(
                                   () => paymentMethod = 'transferencia',
                                 );
-                              }
                             },
                           ),
                         ),
@@ -431,7 +505,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                       keyboardType: TextInputType.phone,
                       style: const TextStyle(color: Colors.black),
                       decoration: const InputDecoration(
-                        labelText: 'Teléfono de Contacto',
+                        labelText: 'Teléfono del Local',
                         labelStyle: TextStyle(color: Color(0xFF64748B)),
                         enabledBorder: UnderlineInputBorder(
                           borderSide: BorderSide(color: Color(0xFFE2E8F0)),
@@ -444,7 +518,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     const SizedBox(height: 20),
 
                     Text(
-                      'Ubicación del Delivery:',
+                      'Destino de Carga:',
                       style: GoogleFonts.outfit(
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
@@ -453,124 +527,200 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 8),
 
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: isLocating
-                                ? null
-                                : () async {
-                                    setModalState(() => isLocating = true);
-                                    final pos = await _getCurrentPosition();
-                                    if (pos != null) {
-                                      final addr = await _reverseGeocode(
-                                        pos.latitude,
-                                        pos.longitude,
-                                      );
-                                      setModalState(() {
-                                        selectedCoordinates = LatLng(
+                    if (provider.businessLatitude != null &&
+                        provider.businessLongitude != null &&
+                        !forceCustomLocation) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.teal.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.teal.withOpacity(0.15),
+                            width: 1.2,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.storefront,
+                                  color: Colors.teal,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    provider.businessName ??
+                                        'Tu Tienda Mayorista Registrada',
+                                    // CORREGIDO: Se quitó el caracter extraño por 'fontWeight' limpio
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Colors.teal.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'El despacho se enviará de forma inmutable a las coordenadas geográficas de tu local para evitar errores de envío.',
+                              style: GoogleFonts.openSans(
+                                fontSize: 11,
+                                color: Colors.teal.shade800,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            InkWell(
+                              onTap: () => setModalState(
+                                () => forceCustomLocation = true,
+                              ),
+                              child: Text(
+                                'Cambiar punto de entrega (Solo por esta vez) 🔄',
+                                style: GoogleFonts.outfit(
+                                  color: Colors.cyan.shade700,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: isLocating
+                                  ? null
+                                  : () async {
+                                      setModalState(() => isLocating = true);
+                                      final pos = await _getCurrentPosition();
+                                      if (pos != null) {
+                                        final addr = await _reverseGeocode(
                                           pos.latitude,
                                           pos.longitude,
                                         );
-                                        addressText = addr;
-                                        addressController.text = addr;
-                                      });
-                                    } else {
-                                      const fallback = LatLng(
-                                        -26.18500,
-                                        -58.17417,
-                                      );
-                                      final addr = await _reverseGeocode(
-                                        fallback.latitude,
-                                        fallback.longitude,
-                                      );
-                                      setModalState(() {
-                                        selectedCoordinates = fallback;
-                                        addressText = addr;
-                                        addressController.text = addr;
-                                      });
-                                    }
-                                    setModalState(() => isLocating = false);
-                                  },
-                            icon: isLocating
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                                        setModalState(() {
+                                          selectedCoordinates = LatLng(
+                                            pos.latitude,
+                                            pos.longitude,
+                                          );
+                                          addressText = addr;
+                                          addressController.text = addr;
+                                        });
+                                      } else {
+                                        const fallback = LatLng(
+                                          -26.18500,
+                                          -58.17417,
+                                        );
+                                        final addr = await _reverseGeocode(
+                                          fallback.latitude,
+                                          fallback.longitude,
+                                        );
+                                        setModalState(() {
+                                          selectedCoordinates = fallback;
+                                          addressText = addr;
+                                          addressController.text = addr;
+                                        });
+                                      }
+                                      setModalState(() => isLocating = false);
+                                    },
+                              icon: isLocating
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.cyan,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.my_location,
+                                      size: 16,
                                       color: Colors.cyan,
                                     ),
-                                  )
-                                : const Icon(
-                                    Icons.my_location,
-                                    size: 16,
-                                    color: Colors.cyan,
-                                  ),
-                            label: Text(
-                              'GPS Actual',
-                              style: GoogleFonts.outfit(
-                                fontSize: 12,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.bold,
+                              label: Text(
+                                'GPS Actual',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                  color: Color(0xFFCBD5E1),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              _openMapPicker(context, (LatLng location) async {
-                                setModalState(
-                                  () => selectedCoordinates = location,
-                                );
-                                final addr = await _reverseGeocode(
-                                  location.latitude,
-                                  location.longitude,
-                                );
-                                setModalState(() {
-                                  addressText = addr;
-                                  addressController.text = addr;
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                _openMapPicker(context, (
+                                  LatLng location,
+                                ) async {
+                                  setModalState(
+                                    () => selectedCoordinates = location,
+                                  );
+                                  final addr = await _reverseGeocode(
+                                    location.latitude,
+                                    location.longitude,
+                                  );
+                                  setModalState(() {
+                                    addressText = addr;
+                                    addressController.text = addr;
+                                  });
                                 });
-                              });
-                            },
-                            icon: const Icon(
-                              Icons.map_outlined,
-                              size: 16,
-                              color: Colors.cyan,
-                            ),
-                            label: Text(
-                              'Buscar en Mapa',
-                              style: GoogleFonts.outfit(
-                                fontSize: 12,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.bold,
+                              },
+                              icon: const Icon(
+                                Icons.map_outlined,
+                                size: 16,
+                                color: Colors.cyan,
                               ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFCBD5E1)),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                              label: Text(
+                                'Mapa Alternativo',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                  color: Color(0xFFCBD5E1),
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
 
-                    // FIX CRÍTICO: Vinculamos el addressController que estaba ausente
                     TextField(
                       controller: addressController,
+                      readOnly:
+                          provider.businessLatitude != null &&
+                          provider.businessLongitude != null &&
+                          !forceCustomLocation,
                       style: const TextStyle(color: Colors.black),
                       decoration: InputDecoration(
-                        labelText: 'Dirección Detallada',
+                        labelText: 'Dirección Detallada de Entrega',
                         labelStyle: const TextStyle(color: Color(0xFF64748B)),
                         suffixIcon: selectedCoordinates != null
                             ? const Icon(
@@ -592,6 +742,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const SizedBox(height: 20),
 
+                    // CORREGIDO: Se quitó el caracter extraño por 'fontWeight' limpio
                     Text(
                       'Selecciona tu Repartidor Preferido (Opcional):',
                       style: GoogleFonts.outfit(
@@ -741,7 +892,9 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           if (ph.isEmpty || addr.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Por favor, completa el teléfono y la dirección de entrega.'),
+                                content: Text(
+                                  'Por favor, completa el teléfono y la dirección de entrega.',
+                                ),
                                 backgroundColor: Colors.redAccent,
                               ),
                             );
@@ -750,123 +903,35 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
 
                           Navigator.pop(context);
 
-                          await provider.addClientOrder(
-                            product.name,
-                            orderQuantity,
-                            product.price,
-                            addr,
-                            ph,
-                            preferredRepartidorId: preferredDriverId,
-                            paymentMethod: paymentMethod,
-                            latitude: selectedCoordinates?.latitude,
-                            longitude: selectedCoordinates?.longitude,
-                          );
-
-                          if (context.mounted) {
-                            showDialog(
-                              context: context,
-                              builder: (ctx) {
-                                return AlertDialog(
-                                  backgroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(24),
-                                    side: const BorderSide(
-                                      color: Color(0xFFE2E8F0),
-                                    ),
-                                  ),
-                                  title: Column(
-                                    children: [
-                                      const Icon(
-                                        Icons.check_circle_outline,
-                                        color: Colors.teal,
-                                        size: 54,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Text(
-                                        'Pedido Confirmado',
-                                        style: GoogleFonts.outfit(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20,
-                                          color: const Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  content: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Detalles del Pedido:',
-                                        style: GoogleFonts.outfit(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: const Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 10),
-                                      _buildDetailRow(
-                                        Icons.shopping_bag_outlined,
-                                        'Producto',
-                                        product.name,
-                                      ),
-                                      _buildDetailRow(
-                                        Icons.tag_outlined,
-                                        'Cantidad',
-                                        '$orderQuantity Bolsas',
-                                      ),
-                                      _buildDetailRow(
-                                        Icons.monetization_on_outlined,
-                                        'Total',
-                                        currencyFormatter.format(
-                                          product.price * orderQuantity,
-                                        ),
-                                      ),
-                                      _buildDetailRow(
-                                        Icons.payments_outlined,
-                                        'Pago',
-                                        paymentMethod == 'efectivo'
-                                            ? 'Efectivo'
-                                            : 'Transferencia',
-                                      ),
-                                      _buildDetailRow(
-                                        Icons.location_on_outlined,
-                                        'Dirección',
-                                        addr,
-                                      ),
-                                    ],
-                                  ),
-                                  actions: [
-                                    Center(
-                                      child: SizedBox(
-                                        width: 140,
-                                        child: ElevatedButton(
-                                          onPressed: () => Navigator.pop(ctx),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.black,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            padding: const EdgeInsets.symmetric(
-                                              vertical: 12,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Aceptar',
-                                            style: GoogleFonts.outfit(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
+                          try {
+                            await provider.addClientOrder(
+                              product.name,
+                              orderQuantity,
+                              product.price,
+                              addr,
+                              ph,
+                              productId: product.id,
+                              preferredRepartidorId: preferredDriverId,
+                              paymentMethod: paymentMethod,
+                              latitude: selectedCoordinates?.latitude,
+                              longitude: selectedCoordinates?.longitude,
                             );
+
+                            if (context.mounted) {
+                              showPremiumSuccessDialog(
+                                context,
+                                title: 'Compra Confirmada',
+                                message: 'Tu pedido de $orderQuantity bolsas (${product.name}) se ha registrado con éxito. 🚀',
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              showPremiumErrorDialog(
+                                context,
+                                title: 'Error al solicitar pedido',
+                                message: e.toString().replaceAll('Exception: ', '').trim(),
+                              );
+                            }
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -876,7 +941,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           ),
                         ),
                         child: Text(
-                          'Confirmar Pedido',
+                          'Confirmar Compra',
                           style: GoogleFonts.outfit(
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
@@ -933,13 +998,15 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
       name: 'Gs',
       decimalDigits: 0,
     );
-    final activeProduct = _products[_currentPage];
+    final products = _getProducts(provider);
+    final currentPage = _getCurrentPage(products);
+    final activeProduct = products[currentPage];
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          'Catálogo Distribución',
+          'Catálogo de Distribución',
           style: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
             color: const Color(0xFF0F172A),
@@ -957,7 +1024,7 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
               height: 380,
               child: PageView.builder(
                 controller: _pageController,
-                itemCount: _products.length,
+                itemCount: products.length,
                 itemBuilder: (context, index) {
                   double difference = index - _pageOffset;
                   double scale = (1 - (difference.abs() * 0.15)).clamp(
@@ -1012,13 +1079,13 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
             ),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(_products.length, (index) {
+              children: List.generate(products.length, (index) {
                 return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: _currentPage == index ? 18 : 8,
+                  width: currentPage == index ? 18 : 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    color: _currentPage == index
+                    color: currentPage == index
                         ? const Color(0xFF0F172A)
                         : const Color(0xFFCBD5E1),
                     borderRadius: BorderRadius.circular(4),
@@ -1107,6 +1174,42 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                       ],
                     ),
                     const SizedBox(height: 10),
+
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(vertical: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.cyan.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: Colors.cyan.withOpacity(0.12),
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.analytics_outlined,
+                            color: Colors.cyan,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              activeProduct.businessRecommendation,
+                              style: GoogleFonts.openSans(
+                                fontSize: 12,
+                                color: const Color(0xFF334155),
+                                fontWeight: FontWeight.w600,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
                     Text(
                       activeProduct.description,
                       style: GoogleFonts.openSans(
@@ -1171,15 +1274,20 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.black,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 28,
+                              vertical: 14,
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                           child: Text(
-                            'SOLICITAR PEDIDO',
+                            'COMPRAR',
                             style: GoogleFonts.outfit(
                               fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),

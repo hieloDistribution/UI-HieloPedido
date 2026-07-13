@@ -34,66 +34,75 @@ class DbHelper {
   final List<Map<String, dynamic>> _webOrders = [];
   final List<Map<String, dynamic>> _webOutbox = [];
 
-  Future<Database> get database async {
-    if (kIsWeb) {
-      throw UnsupportedError('SQLite database cannot be accessed directly on Web. Use CRUD methods instead.');
-    }
-    if (_database != null) return _database!;
-    _database = await _initDB('orders_v6.db');
-    return _database!;
-  }
+   Future<Database> get database async {
+     if (kIsWeb) {
+       throw UnsupportedError('SQLite database cannot be accessed directly on Web. Use CRUD methods instead.');
+     }
+     if (_database != null) return _database!;
+     _database = await _initDB('orders_v7.db');
+     return _database!;
+   }
 
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
+   Future<Database> _initDB(String filePath) async {
+     final dbPath = await getDatabasesPath();
+     final path = join(dbPath, filePath);
 
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: _createDB,
-    );
-  }
+     return await openDatabase(
+       path,
+       version: 1,
+       onCreate: _createDB,
+     );
+   }
 
-  Future _createDB(Database db, int version) async {
-    // 1. Orders table
-    await db.execute('''
-      CREATE TABLE orders (
-        client_order_id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        client_name TEXT NOT NULL,
-        product_id TEXT NOT NULL,
-        product_name TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        price REAL NOT NULL,
-        created_at TEXT NOT NULL,
-        is_synced INTEGER NOT NULL,
-        status TEXT DEFAULT 'pendiente',
-        repartidor_id TEXT,
-        verification_code TEXT,
-        delivery_address TEXT,
-        client_phone TEXT,
-        accepted_at TEXT,
-        delivered_at TEXT,
-        payment_method TEXT DEFAULT 'efectivo',
-        delivery_latitude REAL,
-        delivery_longitude REAL,
-        client_avatar_url TEXT
-      )
-    ''');
+   Future _createDB(Database db, int version) async {
+     // 1. Orders table
+     await db.execute('''
+       CREATE TABLE orders (
+         client_order_id TEXT PRIMARY KEY,
+         user_id TEXT NOT NULL,
+         client_name TEXT NOT NULL,
+         product_id TEXT NOT NULL,
+         product_name TEXT NOT NULL,
+         quantity INTEGER NOT NULL,
+         price REAL NOT NULL,
+         created_at TEXT NOT NULL,
+         is_synced INTEGER NOT NULL,
+         status TEXT DEFAULT 'pendiente',
+         repartidor_id TEXT,
+         verification_code TEXT,
+         delivery_address TEXT,
+         client_phone TEXT,
+         accepted_at TEXT,
+         delivered_at TEXT,
+         payment_method TEXT DEFAULT 'efectivo',
+         delivery_latitude REAL,
+         delivery_longitude REAL,
+         client_avatar_url TEXT,
+         received_by TEXT
+       )
+     ''');
 
-    // 2. Transactional Outbox table
-    await db.execute('''
-      CREATE TABLE outbox (
-        id TEXT PRIMARY KEY,
-        entity_type TEXT NOT NULL,
-        entity_id TEXT NOT NULL,
-        operation TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        status TEXT DEFAULT 'PENDING'
-      )
-    ''');
-  }
+     // 2. Transactional Outbox table
+     await db.execute('''
+       CREATE TABLE outbox (
+         id TEXT PRIMARY KEY,
+         entity_type TEXT NOT NULL,
+         entity_id TEXT NOT NULL,
+         operation TEXT NOT NULL,
+         payload TEXT NOT NULL,
+         timestamp INTEGER NOT NULL,
+         status TEXT DEFAULT 'PENDING'
+       )
+     ''');
+
+     // 3. Local Audits table (for connection cuts)
+     await db.execute('''
+       CREATE TABLE local_audits (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         disconnected_at TEXT NOT NULL
+       )
+     ''');
+   }
 
   // --- Transactional Outbox Writes ---
 
@@ -118,7 +127,7 @@ class DbHelper {
       final db = await database;
       await db.transaction((txn) async {
         // Insert order
-        await txn.insert('orders', order.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('orders', order.toMap()..remove('repartidor_name'), conflictAlgorithm: ConflictAlgorithm.replace);
         // Insert mutation to outbox
         await txn.insert('outbox', {
           'id': mutationId,
@@ -133,7 +142,7 @@ class DbHelper {
     }
   }
 
-  // Update Order and queue its CREATE/UPSERT mutation in outbox
+  // Update Order and queue its UPDATE mutation in outbox
   Future<void> updateOrder(OrderModel order) async {
     final mutationId = generateUuid();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -148,7 +157,7 @@ class DbHelper {
         'id': mutationId,
         'entity_type': 'ORDER',
         'entity_id': order.clientOrderId,
-        'operation': 'CREATE',
+        'operation': 'UPDATE',
         'payload': payload,
         'timestamp': timestamp,
         'status': 'PENDING',
@@ -157,13 +166,13 @@ class DbHelper {
       final db = await database;
       await db.transaction((txn) async {
         // Update order
-        await txn.insert('orders', order.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('orders', order.toMap()..remove('repartidor_name'), conflictAlgorithm: ConflictAlgorithm.replace);
         // Insert mutation to outbox
         await txn.insert('outbox', {
           'id': mutationId,
           'entity_type': 'ORDER',
           'entity_id': order.clientOrderId,
-          'operation': 'CREATE',
+          'operation': 'UPDATE',
           'payload': payload,
           'timestamp': timestamp,
           'status': 'PENDING',
@@ -220,7 +229,30 @@ class DbHelper {
     }
   }
 
-  // --- Outbox Sync Methods ---
+  // Generic insert mutation to outbox
+  Future<void> insertMutation({
+    required String id,
+    required String entityType,
+    required String entityId,
+    required String operation,
+    required String payload,
+  }) async {
+    final Map<String, dynamic> row = {
+      'id': id,
+      'entity_type': entityType,
+      'entity_id': entityId,
+      'operation': operation,
+      'payload': payload,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'status': 'PENDING',
+    };
+    if (kIsWeb) {
+      _webOutbox.add(row);
+    } else {
+      final db = await database;
+      await db.insert('outbox', row);
+    }
+  }
 
   // Get all pending mutations sorted by timestamp
   Future<List<Map<String, dynamic>>> getPendingMutations() async {
@@ -274,15 +306,43 @@ class DbHelper {
     await db.transaction((txn) async {
       for (final order in orders) {
         final localOrder = order.copyWith(isSynced: 1);
-        await txn.insert('orders', localOrder.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.insert('orders', localOrder.toMap()..remove('repartidor_name'), conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
   }
 
-  // Close DB connection
-  Future close() async {
+  // Clear all cached orders from the database
+  Future<void> clearAllOrders() async {
     if (kIsWeb) return;
     final db = await database;
-    db.close();
+    await db.delete('orders');
   }
-}
+
+   // Close DB connection
+   Future close() async {
+     if (kIsWeb) return;
+     final db = await database;
+     db.close();
+   }
+
+   // --- Local Audits Helper Methods ---
+   Future<void> insertLocalAudit(String disconnectedAt) async {
+     if (kIsWeb) return;
+     final db = await database;
+     await db.insert('local_audits', {
+       'disconnected_at': disconnectedAt,
+     });
+   }
+
+   Future<List<Map<String, dynamic>>> getLocalAudits() async {
+     if (kIsWeb) return [];
+     final db = await database;
+     return await db.query('local_audits');
+   }
+
+   Future<void> deleteLocalAudit(int id) async {
+     if (kIsWeb) return;
+     final db = await database;
+     await db.delete('local_audits', where: 'id = ?', whereArgs: [id]);
+   }
+ }

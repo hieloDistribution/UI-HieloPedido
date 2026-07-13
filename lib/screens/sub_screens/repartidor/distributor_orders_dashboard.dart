@@ -5,8 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import '../../../providers/order_provider.dart';
@@ -86,6 +85,7 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
     OrderModel order,
   ) {
     final codeController = TextEditingController();
+    final receivedByController = TextEditingController();
     String? errorMessage;
 
     showDialog(
@@ -111,10 +111,27 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Por favor, solicitá al cliente el código de 4 dígitos e ingresalo a continuación:',
+                    'Escribe el nombre de la persona que retira e ingresa el código de 4 dígitos:',
                     style: GoogleFonts.openSans(
                       color: const Color(0xFF475569),
                       fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: receivedByController,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: '¿Quién recibe el producto?',
+                      hintText: 'Ej: Juan (Empleado), Carlos (Cajero)',
+                      labelStyle: TextStyle(color: Color(0xFF64748B)),
+                      hintStyle: TextStyle(color: Colors.grey, fontSize: 12),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.cyan),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -148,6 +165,13 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
                 ),
                 ElevatedButton(
                   onPressed: () async {
+                    final who = receivedByController.text.trim();
+                    if (who.isEmpty) {
+                      setDialogState(
+                        () => errorMessage = 'Por favor, ingresá quién recibe',
+                      );
+                      return;
+                    }
                     final enteredCode = codeController.text.trim();
                     if (enteredCode.length != 4) {
                       setDialogState(
@@ -158,6 +182,7 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
                     final success = await provider.confirmDelivery(
                       order.clientOrderId,
                       enteredCode,
+                      who,
                     );
                     if (success && context.mounted) {
                       Navigator.pop(context);
@@ -201,14 +226,22 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
       name: 'Gs',
       decimalDigits: 0,
     );
-    final availableOrders = provider.orders
-        .where(
-          (o) =>
-              o.status == 'pendiente' &&
-              (o.repartidorId == null ||
-                  o.repartidorId == provider.currentUser?.id),
-        )
-        .toList();
+    final availableOrders = provider.orders.where((o) {
+      final isPending = o.status == 'pendiente';
+      final isAcceptedByOther = o.status == 'aceptado' && o.repartidorId != provider.currentUser?.id;
+      
+      if (isPending) {
+        // Si está asignado a otro repartidor, no mostrarlo a los demás en la lista hasta pasar 30s
+        if (o.repartidorId != null && o.repartidorId != provider.currentUser?.id) {
+          final elapsedSec = DateTime.now().difference(o.createdAt).inSeconds;
+          if (elapsedSec < 30) {
+            return false;
+          }
+        }
+        return true;
+      }
+      return isAcceptedByOther;
+    }).toList();
     final myDeliveries = provider.orders
         .where((o) => o.repartidorId == provider.currentUser?.id)
         .toList();
@@ -324,24 +357,59 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
                                     fontSize: 11,
                                   ),
                                 ),
-                                ElevatedButton(
-                                  onPressed: () =>
-                                      provider.acceptOrder(order.clientOrderId),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.black,
-                                    shape: RoundedRectangleBorder(
+                                if (order.status == 'aceptado')
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.teal.withOpacity(0.08),
                                       borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.teal.withOpacity(0.15),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle_outline,
+                                          size: 14,
+                                          color: Colors.teal,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Aceptado por ${order.repartidorName ?? 'otro repartidor'}',
+                                          style: GoogleFonts.outfit(
+                                            color: Colors.teal,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 11,
+                                            letterSpacing: 0.3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  ElevatedButton(
+                                    onPressed: () =>
+                                        provider.acceptOrder(order.clientOrderId),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.black,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Aceptar Pedido',
+                                      style: GoogleFonts.outfit(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ),
-                                  child: Text(
-                                    'Aceptar Pedido',
-                                    style: GoogleFonts.outfit(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
                               ],
                             ),
                           ],
@@ -480,9 +548,21 @@ class _DistributorOrdersDashboardState extends State<DistributorOrdersDashboard>
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: ElevatedButton(
-                                      onPressed: () => provider.startDelivery(
-                                        order.clientOrderId,
-                                      ),
+                                      onPressed: () async {
+                                        try {
+                                          await provider.startDelivery(order.clientOrderId);
+                                        } catch (e) {
+                                          if (context.mounted) {
+                                            String errorMsg = e.toString().replaceAll('Exception:', '').trim();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text('Error al iniciar viaje: $errorMsg'),
+                                                backgroundColor: Colors.redAccent,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.black,
                                         shape: RoundedRectangleBorder(
@@ -770,6 +850,7 @@ class _RouteMapScreenState extends State<_RouteMapScreen> {
       (_) => TextEditingController(),
     );
     final List<FocusNode> otpFocusNodes = List.generate(4, (_) => FocusNode());
+    final receivedByController = TextEditingController();
     String? errorMsg;
 
     showDialog(
@@ -813,11 +894,28 @@ class _RouteMapScreenState extends State<_RouteMapScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Solicitá el código de 4 dígitos al cliente para validar la entrega física:',
+                    'Escribí quién recibe e ingresá el código de 4 dígitos para validar la entrega:',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.openSans(
                       fontSize: 12,
                       color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: receivedByController,
+                    style: const TextStyle(color: Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: '¿Quién recibe el producto?',
+                      hintText: 'Ej: Juan (Empleado), Carlos (Cajero)',
+                      labelStyle: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                      hintStyle: TextStyle(color: Colors.grey, fontSize: 12),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.cyan),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -863,12 +961,26 @@ class _RouteMapScreenState extends State<_RouteMapScreen> {
                                 ).requestFocus(otpFocusNodes[index + 1]);
                               } else {
                                 otpFocusNodes[index].unfocus();
+
+                                final who = receivedByController.text.trim();
+                                if (who.isEmpty) {
+                                  setModalState(() {
+                                    errorMsg = 'Debes indicar quién recibe';
+                                    for (var c in otpControllers) {
+                                      c.clear();
+                                    }
+                                    FocusScope.of(ctx).requestFocus(otpFocusNodes[0]);
+                                  });
+                                  return;
+                                }
+
                                 String code = otpControllers
                                     .map((c) => c.text)
                                     .join();
                                 final success = await provider.confirmDelivery(
                                   widget.order.clientOrderId,
                                   code,
+                                  who,
                                 );
                                 if (success) {
                                   if (mounted) {
@@ -954,89 +1066,37 @@ class _RouteMapScreenState extends State<_RouteMapScreen> {
       ),
       body: Stack(
         children: [
-          FlutterMap(
-            options: MapOptions(
-              initialCenter: _destination,
-              initialZoom: 15.0,
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-              ),
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: _destination,
+              zoom: 15.0,
             ),
-            children: [
-              TileLayer(
-                urlTemplate:
-                    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-                subdomains: const ['a', 'b', 'c', 'd'],
-                retinaMode: RetinaMode.isHighDensity(context),
-              ),
+            zoomControlsEnabled: false,
+            myLocationButtonEnabled: false,
+            mapType: MapType.normal,
+            polylines: {
               if (!_isLoadingRoute && activeRouteSegment.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: activeRouteSegment,
-                      color: const Color(0xFF06B6D4),
-                      strokeWidth: 4.5,
-                    ),
-                  ],
+                Polyline(
+                  polylineId: const PolylineId('active_route'),
+                  points: activeRouteSegment,
+                  color: const Color(0xFF06B6D4),
+                  width: 5,
                 ),
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: _driverPosition,
-                    width: 45,
-                    height: 45,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.black, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(22),
-                        child: buildAvatarHelper(
-                          provider.currentUserFullName ?? 'Repartidor',
-                          provider.currentUserAvatarUrl,
-                          radius: 22,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Marker(
-                    point: _destination,
-                    width: 45,
-                    height: 45,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.redAccent, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.redAccent.withOpacity(0.2),
-                            blurRadius: 6,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(22),
-                        child: buildAvatarHelper(
-                          widget.order.clientName,
-                          widget.order.clientAvatarUrl,
-                          radius: 22,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+            },
+            markers: {
+              Marker(
+                markerId: const MarkerId('driver'),
+                position: _driverPosition,
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+                onTap: () => _openDriverDetailSheet(context, provider),
               ),
-            ],
+              Marker(
+                markerId: const MarkerId('destination'),
+                position: _destination,
+                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+                onTap: () => _openClientDetailSheet(context, widget.order),
+              ),
+            },
           ),
           if (_isLoadingRoute)
             const Center(
@@ -1111,6 +1171,230 @@ class _RouteMapScreenState extends State<_RouteMapScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  void _openDriverDetailSheet(BuildContext context, OrderProvider provider) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final oName = provider.currentUserFullName ?? 'Mi Perfil';
+        final phone = provider.currentUserCelular ?? 'No registrado';
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  buildAvatarHelper(
+                    oName,
+                    provider.currentUserAvatarUrl,
+                    radius: 28,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          oName,
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        Text(
+                          'Repartidor en Ruta',
+                          style: GoogleFonts.openSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(
+                color: Color(0xFFF1F5F9),
+                height: 24,
+                thickness: 1.5,
+              ),
+              _buildSheetRow(
+                Icons.phone_android_outlined,
+                "Celular:",
+                phone,
+              ),
+              const SizedBox(height: 8),
+              _buildSheetRow(
+                Icons.directions_car_outlined,
+                "Rol Activo:",
+                "Logística y Entrega",
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Cerrar',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openClientDetailSheet(BuildContext context, OrderModel order) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  buildAvatarHelper(
+                    order.clientName,
+                    order.clientAvatarUrl,
+                    radius: 28,
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.clientName,
+                          style: GoogleFonts.outfit(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        Text(
+                          'Destinatario de Entrega',
+                          style: GoogleFonts.openSans(
+                            fontSize: 12,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(
+                color: Color(0xFFF1F5F9),
+                height: 24,
+                thickness: 1.5,
+              ),
+              _buildSheetRow(
+                Icons.location_on_outlined,
+                "Dirección de Entrega:",
+                order.deliveryAddress ?? 'Ubicación Fija',
+              ),
+              const SizedBox(height: 8),
+              _buildSheetRow(
+                Icons.phone_android_outlined,
+                "Celular Cliente:",
+                order.clientPhone ?? 'No registrado',
+              ),
+              const SizedBox(height: 8),
+              _buildSheetRow(
+                Icons.shopping_bag_outlined,
+                "Carga Solicitada:",
+                "${order.quantity} bolsas de ${order.productName}",
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF4444),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: Text(
+                    'Cerrar',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSheetRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFF64748B)),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.openSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

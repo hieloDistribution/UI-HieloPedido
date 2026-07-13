@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+
 import '../providers/order_provider.dart';
+import '../models/order_model.dart';
+import 'sub_screens/admin/admin_map_view.dart';
+import 'sub_screens/shared/widgets/build_avatar_helper.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -12,35 +17,39 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> {
+  String _currentTab =
+      'Resumen'; // 'Resumen', 'Logística', 'Auditorías', 'Despachos'
   String? _selectedDistributorEmail;
+
+  Timer? _refreshTimer;
+
   final currencyFormatter = NumberFormat.simpleCurrency(
     locale: 'es_PY',
     name: 'Gs',
     decimalDigits: 0,
   );
 
-  // Custom Colors - Centralizados y optimizados
-  static const Color slate50 = Color(0xFFF8FAFC);
-  static const Color slate300 = Color(0xFFCBD5E1);
-  static const Color slate400 = Color(0xFF94A3B8);
-  static const Color slate700 = Color(0xFF334155);
-  static const Color slate750 = Color(
-    0x801E293B,
-  ); // 0x80 equivale a 50% de opacidad directamente en HEX
-  static const Color slate800 = Color(0xFF1E293B);
-  static const Color slate900 = Color(0xFF0F172A);
-  static const Color emerald500 = Color(0xFF10B981);
-  static const Color emeraldAccent = Color(0xFF34D399);
-  static const Color cyanCustom = Color(
-    0xFF06B6D4,
-  ); // Un cyan más integrado para diseño premium
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<OrderProvider>(context, listen: false).fetchAdminOrders();
+      Provider.of<OrderProvider>(
+        context,
+        listen: false,
+      ).fetchRepartidoresLocations();
     });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -48,13 +57,11 @@ class _AdminScreenState extends State<AdminScreen> {
     final provider = Provider.of<OrderProvider>(context);
     final allOrders = provider.adminOrders;
 
-    // Extract unique distributors for filter
     final distributors = allOrders
         .map((o) => (o['profiles']?['email'] ?? 'Sin Email') as String)
         .toSet()
         .toList();
 
-    // Filter orders
     final filteredOrders = _selectedDistributorEmail == null
         ? allOrders
         : allOrders
@@ -63,31 +70,34 @@ class _AdminScreenState extends State<AdminScreen> {
               )
               .toList();
 
-    // Calculate metrics
+    // Cálculo de métricas comerciales reales
     final double totalRevenue = filteredOrders.fold(0.0, (sum, item) {
       final double price = (item['price'] as num).toDouble();
       final int qty = item['quantity'] as int;
       return sum + (price * qty);
     });
 
-    final int totalOrdersCount = filteredOrders.length;
-
     return Scaffold(
-      backgroundColor: slate900,
+      backgroundColor: const Color(
+        0xFFF8FAFC,
+      ), // Fondo sutil ultra limpio corporativo
       appBar: AppBar(
         title: Text(
-          'Panel Administrador',
+          'Consola de Administración',
           style: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: const Color(0xFF0F172A),
           ),
         ),
-        backgroundColor: slate800,
+        backgroundColor: Colors.white,
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: cyanCustom),
-            onPressed: () => provider.fetchAdminOrders(),
+            icon: const Icon(Icons.refresh, color: Color(0xFF0F172A)),
+            onPressed: () {
+              provider.fetchAdminOrders();
+              provider.fetchRepartidoresLocations();
+            },
           ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
@@ -96,326 +106,400 @@ class _AdminScreenState extends State<AdminScreen> {
         ],
       ),
       body: provider.isLoading
-          ? const Center(child: CircularProgressIndicator(color: cyanCustom))
-          : RefreshIndicator(
-              onRefresh: () => provider.fetchAdminOrders(),
-              color: cyanCustom,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16.0),
-                children: [
-                  // Welcome & subtitle
-                  Text(
-                    'Resumen de Distribución',
-                    style: GoogleFonts.outfit(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+          ? const Center(child: CircularProgressIndicator(color: Colors.black))
+          : Column(
+              children: [
+                // Barra de Pestañas Internas Estilo Chips Planos
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Monitorea las ventas en tiempo real de todos los distribuidores',
-                    style: GoogleFonts.outfit(fontSize: 14, color: slate400),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Filter dropdown mejorado estéticamente
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: slate800,
-                      borderRadius: BorderRadius.circular(
-                        14,
-                      ), // Bordes un poco más suaves
-                      border: Border.all(
-                        color: _selectedDistributorEmail != null
-                            ? cyanCustom
-                            : slate700,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: _selectedDistributorEmail,
-                        hint: Text(
-                          'Filtrar por Distribuidor',
-                          style: GoogleFonts.outfit(color: slate400),
-                        ),
-                        dropdownColor: slate800,
-                        style: GoogleFonts.outfit(
-                          color: Colors.white,
-                          fontSize: 15,
-                        ),
-                        icon: const Icon(
-                          Icons.filter_list,
-                          color: slate400,
-                        ), // Icono más limpio para filtros
-                        isExpanded: true,
-                        items: [
-                          DropdownMenuItem<String>(
-                            value: null,
-                            child: Text(
-                              'Todos los Distribuidores',
-                              style: GoogleFonts.outfit(),
-                            ),
-                          ),
-                          ...distributors.map((email) {
-                            return DropdownMenuItem<String>(
-                              value: email,
-                              child: Text(email, style: GoogleFonts.outfit()),
-                            );
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setState(() => _selectedDistributorEmail = val);
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // KPIs Metrics Row
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildMetricCard(
-                          title: 'Recaudación Total',
-                          value: currencyFormatter.format(totalRevenue),
-                          icon: Icons
-                              .payments_outlined, // Icono Outline se ve más moderno
-                          iconColor: emeraldAccent,
-                          bgGradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFF065F46), Color(0xFF047857)],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildMetricCard(
-                          title: 'Total Pedidos',
-                          value: totalOrdersCount.toString(),
-                          icon: Icons
-                              .local_shipping_outlined, // Más acorde a distribución de hielo
-                          iconColor: cyanCustom,
-                          bgGradient: const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [Color(0xFF1E3A8A), Color(0xFF1D4ED8)],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-
-                  // Orders list section header
-                  Text(
-                    'Detalle de Pedidos (${filteredOrders.length})',
-                    style: GoogleFonts.outfit(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Orders list optimizado sin anidamientos pesados de scroll
-                  filteredOrders.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 40.0),
-                            child: Text(
-                              'No se encontraron pedidos subidos.',
-                              style: GoogleFonts.outfit(color: slate400),
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          shrinkWrap:
-                              true, // Se mantiene solo porque está dentro de otro ListView maestro temporalmente
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: filteredOrders.length,
-                          itemBuilder: (context, index) {
-                            final order = filteredOrders[index];
-                            final clientName =
-                                order['client_name'] as String? ??
-                                'Sin Cliente';
-                            final prodName =
-                                order['product_name'] as String? ??
-                                'Sin Producto';
-                            final quantity = order['quantity'] as int? ?? 0;
-                            final price =
-                                (order['price'] as num?)?.toDouble() ?? 0.0;
-                            final dateStr =
-                                order['created_at'] as String? ?? '';
-                            final date = dateStr.isNotEmpty
-                                ? DateTime.parse(dateStr)
-                                : DateTime.now();
-                            final formattedDate = DateFormat(
-                              'dd/MM/yyyy HH:mm',
-                            ).format(date);
-                            final distributorEmail =
-                                order['profiles']?['email'] as String? ??
-                                'Sin email';
-
-                            return Card(
-                              color: slate800,
-                              margin: const EdgeInsets.only(bottom: 12),
-                              elevation: 2,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                side: const BorderSide(
-                                  color: slate700,
-                                  width: 1,
-                                ), // Corregido el bug de la variable
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.storefront,
-                                                size: 18,
-                                                color: slate400,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  clientName,
-                                                  style: GoogleFonts.outfit(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Text(
-                                          currencyFormatter.format(
-                                            price * quantity,
-                                          ),
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                            color: cyanCustom,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-
-                                    // Product details con tag estético de cantidad
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: slate900,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        '$prodName × $quantity',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                          color: slate300,
-                                        ),
-                                      ),
-                                    ),
-                                    const Divider(color: slate700, height: 24),
-
-                                    // Metadata row
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Expanded(
-                                          child: Row(
-                                            children: [
-                                              const Icon(
-                                                Icons.badge_outlined,
-                                                size: 14,
-                                                color: slate400,
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Text(
-                                                  distributorEmail,
-                                                  style: GoogleFonts.outfit(
-                                                    fontSize: 12,
-                                                    color: slate400,
-                                                  ),
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.schedule,
-                                              size: 14,
-                                              color: slate400,
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              formattedDate,
-                                              style: GoogleFonts.outfit(
-                                                fontSize: 12,
-                                                color: slate400,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children:
+                          [
+                            'Resumen',
+                            'Logística',
+                            'Auditorías',
+                            'Despachos',
+                          ].map((tab) {
+                            final isSelected = _currentTab == tab;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: ChoiceChip(
+                                label: Text(
+                                  tab,
+                                  style: GoogleFonts.outfit(
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : const Color(0xFF475569),
+                                    fontSize: 13,
+                                  ),
                                 ),
+                                selected: isSelected,
+                                selectedColor: const Color(0xFF0F172A),
+                                backgroundColor: const Color(0xFFF1F5F9),
+                                elevation: 0,
+                                side: BorderSide.none,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                onSelected: (val) {
+                                  if (val) setState(() => _currentTab = tab);
+                                },
                               ),
                             );
-                          },
-                        ),
-                ],
-              ),
+                          }).toList(),
+                    ),
+                  ),
+                ),
+
+                // Contenedor dinámico según sección seleccionada
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: _buildActiveSection(
+                      provider,
+                      filteredOrders,
+                      totalRevenue,
+                      distributors,
+                    ),
+                  ),
+                ),
+              ],
             ),
     );
   }
 
-  Widget _buildMetricCard({
+  Widget _buildActiveSection(
+    OrderProvider provider,
+    List<Map<String, dynamic>> filteredOrders,
+    double totalRevenue,
+    List<String> distributors,
+  ) {
+    switch (_currentTab) {
+      case 'Resumen':
+        return _buildResumenTab(filteredOrders, totalRevenue, distributors);
+      case 'Logística':
+        return const AdminMapView(); // Consumimos el mapa integrado directamente acá
+      case 'Auditorías':
+        return _buildAuditoriasTab(provider);
+      case 'Despachos':
+        return _buildDespachosTab(filteredOrders);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // --- SECCIÓN 1: RESUMEN BENTO UI ---
+  Widget _buildResumenTab(
+    List<Map<String, dynamic>> filteredOrders,
+    double totalRevenue,
+    List<String> distributors,
+  ) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Dropdown de Filtrado Minimalista
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _selectedDistributorEmail,
+              hint: Text(
+                'Filtrar por Camión/Repartidor',
+                style: GoogleFonts.outfit(color: const Color(0xFF94A3B8)),
+              ),
+              dropdownColor: Colors.white,
+              style: GoogleFonts.outfit(
+                color: const Color(0xFF0F172A),
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+              isExpanded: true,
+              items: [
+                DropdownMenuItem<String>(
+                  value: null,
+                  child: Text(
+                    'Todos los Camiones Activos',
+                    style: GoogleFonts.outfit(),
+                  ),
+                ),
+                ...distributors.map(
+                  (email) => DropdownMenuItem<String>(
+                    value: email,
+                    child: Text(email, style: GoogleFonts.outfit()),
+                  ),
+                ),
+              ],
+              onChanged: (val) =>
+                  setState(() => _selectedDistributorEmail = val),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Fila de Métricas Bento Cards
+        Row(
+          children: [
+            Expanded(
+              child: _buildBentoMetricCard(
+                title: 'Flujo de Caja Real',
+                value: currencyFormatter.format(totalRevenue),
+                icon: Icons.payments_outlined,
+                accentColor: Colors.green.shade700,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildBentoMetricCard(
+                title: 'Volumen Cargas',
+                value: '${filteredOrders.length} Remitos',
+                icon: Icons.local_shipping_outlined,
+                accentColor: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // --- SECCIÓN 3: TAB DE AUDITORÍAS OFFLINE REAL ---
+  Widget _buildAuditoriasTab(OrderProvider provider) {
+    final repartidoresConUbicacion = provider.repartidores;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          'Monitoreo de Cobertura y Señal',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF0F172A),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Auditoría en tiempo real sobre pérdidas de conectividad y sincronizaciones en ruta.',
+          style: GoogleFonts.openSans(
+            fontSize: 12,
+            color: const Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        repartidoresConUbicacion.isEmpty
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Text('No hay choferes en ruta activa.'),
+                ),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: repartidoresConUbicacion.length,
+                itemBuilder: (context, index) {
+                  final rep = repartidoresConUbicacion[index];
+
+                  // Evaluamos la conexión real del proveedor/repartidor basándonos en last_seen_at
+                  bool isDriverOnline = false;
+                  final lastSeenStr = rep['last_seen_at'] as String?;
+                  if (lastSeenStr != null) {
+                    try {
+                      final lastSeen = DateTime.parse(lastSeenStr);
+                      final difference = DateTime.now().toUtc().difference(lastSeen);
+                      isDriverOnline = difference.inSeconds <= 30;
+                    } catch (_) {
+                      isDriverOnline = false;
+                    }
+                  }
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      children: [
+                        buildAvatarHelper(
+                          rep['full_name'] ?? 'Chofer',
+                          rep['avatar_url'] as String?,
+                          radius: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                rep['full_name'] ?? 'Distribuidor',
+                                style: GoogleFonts.outfit(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              Text(
+                                'Unidad: ${rep['tipo_vehiculo']} • Patente: ${rep['matricula']}',
+                                style: GoogleFonts.openSans(
+                                  fontSize: 11,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Badge Dinámico Inteligente en Blanco y Negro / Rojo Sutil
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isDriverOnline
+                                ? const Color(0xFFF1F5F9)
+                                : const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDriverOnline
+                                  ? const Color(0xFFE2E8F0)
+                                  : const Color(0xFFFEE2E2),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isDriverOnline ? Icons.wifi : Icons.wifi_off,
+                                size: 12,
+                                color: isDriverOnline
+                                    ? const Color(0xFF0F172A)
+                                    : const Color(0xFFEF4444),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isDriverOnline ? 'SEÑAL OK' : 'SIN CONEXIÓN',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDriverOnline
+                                      ? const Color(0xFF0F172A)
+                                      : const Color(0xFFEF4444),
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ],
+    );
+  }
+
+  // --- SECCIÓN 4: HISTORIAL CRUDO DE DESPACHOS ---
+  Widget _buildDespachosTab(List<Map<String, dynamic>> filteredOrders) {
+    if (filteredOrders.isEmpty) {
+      return Center(
+        child: Text(
+          'No se registraron movimientos.',
+          style: GoogleFonts.outfit(color: const Color(0xFF64748B)),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: filteredOrders.length,
+      itemBuilder: (context, index) {
+        final order = filteredOrders[index];
+        final clientName = order['client_name'] as String? ?? 'Sin Cliente';
+        final prodName = order['product_name'] as String? ?? 'Sin Producto';
+        final quantity = order['quantity'] as int? ?? 0;
+        final price = (order['price'] as num?)?.toDouble() ?? 0.0;
+        final dateStr = order['created_at'] as String? ?? '';
+        final formattedDate = dateStr.isNotEmpty
+            ? DateFormat('dd/MM HH:mm').format(DateTime.parse(dateStr))
+            : '';
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      clientName,
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$prodName × $quantity Bolsas • $formattedDate',
+                      style: GoogleFonts.openSans(
+                        fontSize: 12,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                currencyFormatter.format(price * quantity),
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBentoMetricCard({
     required String title,
     required String value,
     required IconData icon,
-    required Color iconColor,
-    required Gradient bgGradient,
+    required Color accentColor,
   }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: bgGradient,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,22 +510,21 @@ class _AdminScreenState extends State<AdminScreen> {
               Text(
                 title,
                 style: GoogleFonts.outfit(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF64748B),
                 ),
               ),
-              Icon(icon, size: 22, color: iconColor),
+              Icon(icon, size: 18, color: accentColor),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             value,
             style: GoogleFonts.outfit(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
-              letterSpacing: 0.5,
+              color: const Color(0xFF0F172A),
             ),
           ),
         ],
