@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/widgets/quantity_stepper.dart';
 import '../../../../providers/order_provider.dart';
 import 'success_overlay_dialog.dart';
 
@@ -246,51 +247,11 @@ void showRequestIceDialog(
                   ),
                   const Divider(height: 24, color: Color(0xFFE2E8F0)),
 
-                  // Quantity Selector
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Cantidad:',
-                        style: GoogleFonts.outfit(
-                          color: const Color(0xFF0F172A),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              color: Colors.black87,
-                            ),
-                            onPressed: () {
-                              if (quantity > 1) {
-                                setDialogState(() => quantity--);
-                              }
-                            },
-                          ),
-                          Text(
-                            '$quantity',
-                            style: GoogleFonts.outfit(
-                              color: const Color(0xFF0F172A),
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.add_circle_outline,
-                              color: Colors.black87,
-                            ),
-                            onPressed: () {
-                              setDialogState(() => quantity++);
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
+                  // Quantity Selector (editable)
+                  QuantityStepper(
+                    value: quantity,
+                    onChanged: (v) => setDialogState(() => quantity = v),
+                    label: 'Cantidad:',
                   ),
                   const SizedBox(height: 12),
 

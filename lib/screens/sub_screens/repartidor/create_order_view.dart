@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../providers/order_provider.dart';
+import '../../../core/widgets/quantity_stepper.dart';
 import '../shared/widgets/build_avatar_helper.dart';
 import '../shared/widgets/success_overlay_dialog.dart';
 
@@ -436,58 +437,11 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                 const SizedBox(height: 16),
               ],
 
-              // Selector de Cantidad Fino y Minimalista
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Bolsas a Entregar:',
-                      style: GoogleFonts.outfit(
-                        color: const Color(0xFF475569),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.remove_circle_outline,
-                            color: Color(0xFF475569),
-                          ),
-                          onPressed: () {
-                            if (_quantity > 1) setState(() => _quantity--);
-                          },
-                        ),
-                        Text(
-                          '$_quantity',
-                          style: GoogleFonts.outfit(
-                            color: const Color(0xFF0F172A),
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.add_circle_outline,
-                            color: Color(0xFF475569),
-                          ),
-                          onPressed: () => setState(() => _quantity++),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              // Selector de Cantidad editable (campo numérico + +/−)
+              QuantityStepper(
+                value: _quantity,
+                onChanged: (v) => setState(() => _quantity = v),
+                label: 'Bolsas a Entregar:',
               ),
               const SizedBox(height: 28),
 

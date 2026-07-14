@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../../../providers/order_provider.dart';
 import '../shared/widgets/build_avatar_helper.dart';
 import '../shared/widgets/success_overlay_dialog.dart';
+import '../../../core/widgets/quantity_stepper.dart';
 
 // --- IceProduct model for Carousel ---
 class IceProduct {
@@ -381,47 +382,11 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
                     ),
                     const Divider(height: 24, color: Color(0xFFE2E8F0)),
 
-                    // Cantidad
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Cantidad de Bolsas:',
-                          style: GoogleFonts.outfit(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: const Color(0xFF0F172A),
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.remove_circle_outline,
-                                color: Colors.black87,
-                              ),
-                              onPressed: () => orderQuantity > 1
-                                  ? setModalState(() => orderQuantity--)
-                                  : null,
-                            ),
-                            Text(
-                              '$orderQuantity',
-                              style: GoogleFonts.outfit(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(
-                                Icons.add_circle_outline,
-                                color: Colors.black87,
-                              ),
-                              onPressed: () =>
-                                  setModalState(() => orderQuantity++),
-                            ),
-                          ],
-                        ),
-                      ],
+                    // Cantidad (editable)
+                    QuantityStepper(
+                      value: orderQuantity,
+                      onChanged: (v) => setModalState(() => orderQuantity = v),
+                      label: 'Cantidad de Bolsas:',
                     ),
                     const SizedBox(height: 12),
 
