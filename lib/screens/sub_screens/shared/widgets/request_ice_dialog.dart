@@ -565,35 +565,61 @@ void showRequestIceDialog(
                     return;
                   }
 
-                  try {
-                    await provider.addClientOrder(
-                      name,
-                      quantity,
-                      price,
-                      addr,
-                      ph,
-                      productId: productId ?? 'hielo_bag',
-                      preferredRepartidorId: selectedRepartidorId,
-                      paymentMethod: paymentMethod,
-                      latitude: selectedLatitude,
-                      longitude: selectedLongitude,
+                  // Validar reglas de negocio (peso mínimo, stock, ruta) antes
+                  // de tocar la red. Buscamos el producto en el catálogo real
+                  // para tener weightKg/stock; si no está (no se cargó el
+                  // catálogo), omitimos la validación cliente y dejamos que
+                  // el backend responda.
+                  final product = provider.catalogProducts.firstWhere(
+                    (p) => p['id'] == productId,
+                    orElse: () => const <String, dynamic>{},
+                  );
+                  if (product.isNotEmpty) {
+                    final v = OrderProvider.validateOrder(
+                      product: product,
+                      quantity: quantity,
                     );
+                    if (!v.ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(v.message!),
+                          backgroundColor: Colors.redAccent,
+                        ),
+                      );
+                      return;
+                    }
+                  }
+
+                  final err = await provider.addClientOrder(
+                    name,
+                    quantity,
+                    price,
+                    addr,
+                    ph,
+                    productId: productId ?? 'hielo_bag',
+                    preferredRepartidorId: selectedRepartidorId,
+                    paymentMethod: paymentMethod,
+                    latitude: selectedLatitude,
+                    longitude: selectedLongitude,
+                  );
+                  if (err != null) {
                     if (context.mounted) {
-                      Navigator.pop(context);
-                      showPremiumSuccessDialog(
-                        context,
-                        title: 'Pedido Solicitado',
-                        message: 'Tu pedido se ha registrado correctamente y el preventista de la zona será alertado.',
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(err),
+                          backgroundColor: Colors.redAccent,
+                        ),
                       );
                     }
-                  } catch (e) {
-                    if (context.mounted) {
-                      showPremiumErrorDialog(
-                        context,
-                        title: 'No se pudo crear el pedido',
-                        message: e.toString().replaceAll('Exception: ', '').trim(),
-                      );
-                    }
+                    return;
+                  }
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    showPremiumSuccessDialog(
+                      context,
+                      title: 'Pedido Solicitado',
+                      message: 'Tu pedido se ha registrado correctamente y el preventista de la zona será alertado.',
+                    );
                   }
                 },
                 style: ElevatedButton.styleFrom(

@@ -903,35 +903,61 @@ class _ClienteComprasViewState extends State<ClienteComprasView> {
 
                           Navigator.pop(context);
 
-                          try {
-                            await provider.addClientOrder(
-                              product.name,
-                              orderQuantity,
-                              product.price,
-                              addr,
-                              ph,
-                              productId: product.id,
-                              preferredRepartidorId: preferredDriverId,
-                              paymentMethod: paymentMethod,
-                              latitude: selectedCoordinates?.latitude,
-                              longitude: selectedCoordinates?.longitude,
+                          // Validar contra el catálogo real del backend antes
+                          // de salir (peso mínimo, stock, capacidad de ruta).
+                          final catalogEntry = provider.catalogProducts.firstWhere(
+                            (p) => p['id'] == product.id,
+                            orElse: () => const <String, dynamic>{},
+                          );
+                          if (catalogEntry.isNotEmpty) {
+                            final v = OrderProvider.validateOrder(
+                              product: catalogEntry,
+                              quantity: orderQuantity,
                             );
+                            if (!v.ok) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(v.message!),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                              return;
+                            }
+                          }
 
+                          final err = await provider.addClientOrder(
+                            product.name,
+                            orderQuantity,
+                            product.price,
+                            addr,
+                            ph,
+                            productId: product.id,
+                            preferredRepartidorId: preferredDriverId,
+                            paymentMethod: paymentMethod,
+                            latitude: selectedCoordinates?.latitude,
+                            longitude: selectedCoordinates?.longitude,
+                          );
+
+                          if (err != null) {
                             if (context.mounted) {
-                              showPremiumSuccessDialog(
-                                context,
-                                title: 'Compra Confirmada',
-                                message: 'Tu pedido de $orderQuantity bolsas (${product.name}) se ha registrado con éxito. 🚀',
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(err),
+                                  backgroundColor: Colors.redAccent,
+                                ),
                               );
                             }
-                          } catch (e) {
-                            if (context.mounted) {
-                              showPremiumErrorDialog(
-                                context,
-                                title: 'Error al solicitar pedido',
-                                message: e.toString().replaceAll('Exception: ', '').trim(),
-                              );
-                            }
+                            return;
+                          }
+
+                          if (context.mounted) {
+                            showPremiumSuccessDialog(
+                              context,
+                              title: 'Compra Confirmada',
+                              message: 'Tu pedido de $orderQuantity bolsas (${product.name}) se ha registrado con éxito. 🚀',
+                            );
                           }
                         },
                         style: ElevatedButton.styleFrom(

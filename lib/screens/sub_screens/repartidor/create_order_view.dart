@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import '../../../providers/order_provider.dart';
 import '../shared/widgets/build_avatar_helper.dart';
 import '../shared/widgets/success_overlay_dialog.dart';
@@ -14,52 +15,7 @@ class CreateOrderView extends StatefulWidget {
 
 class _CreateOrderViewState extends State<CreateOrderView> {
   final _formKey = GlobalKey<FormState>();
-  final _priceController = TextEditingController();
   final _searchController = TextEditingController();
-
-  // Enriquecemos el catálogo con descripciones, imágenes y etiquetas analíticas
-  final List<Map<String, dynamic>> _catalog = [
-    {
-      'id': 'PROD-ICE-001',
-      'name': 'Bolsa Hielo Cubos 2kg',
-      'price': 120.00,
-      'image': 'assets/hielo.png',
-      'description':
-          'Cilindros compactos de agua purificada por ósmosis inversa. Ideal para conservar el frío de forma individual.',
-      'recommendation':
-          'Alta Rotación: Este establecimiento solicita con alta frecuencia el formato de 2kg para stock diario.',
-    },
-    {
-      'id': 'PROD-ICE-002',
-      'name': 'Bolsa Hielo Cubos 5kg',
-      'price': 250.00,
-      'image': 'assets/hielo.png',
-      'description':
-          'Formato estándar familiar y comercial. Rolitos macizos cristalinos de larga duración optimizados para conservadoras.',
-      'recommendation':
-          'Compra Frecuente: Formato preferido por este local en compras de fin de semana para abastecer su depósito.',
-    },
-    {
-      'id': 'PROD-ICE-003',
-      'name': 'Bolsa Hielo Molido 10kg',
-      'price': 450.00,
-      'image': 'assets/hielo.png',
-      'description':
-          'Hielo triturado premium uniforme de fácil manipulación, ideal para barras de tragos, licuados y coctelería profesional.',
-      'recommendation':
-          'Sugerencia Comercial: Recomendado si el local cuenta con expendio de bebidas preparadas o eventos activos.',
-    },
-    {
-      'id': 'PROD-ICE-004',
-      'name': 'Bolsa Hielo Escamas 15kg',
-      'price': 600.00,
-      'image': 'assets/hielo.png',
-      'description':
-          'Formato industrial de enfriamiento instantáneo en escamas. Diseñado para alta gastronomía y mantención a gran escala.',
-      'recommendation':
-          'Pedido Especial: Ideal para optimizar el espacio de cámaras de frío industriales si el comercio lo requiere.',
-    },
-  ];
 
   Map<String, dynamic>? _selectedProduct;
   Map<String, dynamic>? _selectedShop;
@@ -68,77 +24,104 @@ class _CreateOrderViewState extends State<CreateOrderView> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
-      Provider.of<OrderProvider>(context, listen: false).fetchClienteShops();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final p = Provider.of<OrderProvider>(context, listen: false);
+      // First attempt — usually succeeds because _bootstrap already ran.
+      await p.fetchClienteShops();
+      await p.fetchCatalog();
+      // Defensive retry: if shops are still empty after a short delay,
+      // try once more. Catches edge cases where the first request raced
+      // a token refresh or the bootstrap was still in flight.
+      if (mounted && p.clienteShops.isEmpty) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        await p.fetchClienteShops();
+      }
     });
   }
 
   @override
   void dispose() {
-    _priceController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    if (_formKey.currentState!.validate() &&
-        _selectedProduct != null &&
-        _selectedShop != null) {
-      final double? price = double.tryParse(_priceController.text);
-      if (price == null || price <= 0) return;
+  void _snack(String msg, {required bool isError}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.redAccent : Colors.green,
+      ),
+    );
+  }
 
-      final provider = Provider.of<OrderProvider>(context, listen: false);
-      final shopName =
-          _selectedShop!['nombre_comercial'] ??
-          (_selectedShop!['profiles'] != null
-              ? _selectedShop!['profiles']['full_name']
-              : null) ??
-          'Cliente';
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_selectedProduct == null || _selectedShop == null) return;
 
-      try {
-        provider.addOrder(
-          shopName,
-          _selectedProduct!['id'] as String,
-          _selectedProduct!['name'] as String,
-          _quantity,
-          price,
-          deliveryLatitude: _selectedShop!['latitud_comercial'],
-          deliveryLongitude: _selectedShop!['longitud_comercial'],
-          deliveryAddress: _selectedShop!['direccion'],
-          clientUserId: _selectedShop!['profile_id'],
-          clientPhone: _selectedShop!['profiles'] != null
-              ? _selectedShop!['profiles']['celular']
-              : null,
-        );
-
-        showPremiumSuccessDialog(
-          context,
-          title: 'Venta Registrada',
-          message: provider.isOnline
-              ? 'La venta mayorista ha sido sincronizada correctamente con la nube.'
-              : 'La venta ha sido guardada localmente y se sincronizará automáticamente al recuperar conexión.',
-        );
-
-        setState(() {
-          _selectedShop = null;
-          _priceController.clear();
-          _searchController.clear();
-          _selectedProduct = null;
-          _quantity = 1;
-        });
-      } catch (e) {
-        showPremiumErrorDialog(
-          context,
-          title: 'Error al registrar venta',
-          message: e.toString().replaceAll('Exception: ', '').trim(),
-        );
-      }
+    final provider = Provider.of<OrderProvider>(context, listen: false);
+    final v = OrderProvider.validateOrder(
+      product: _selectedProduct!,
+      quantity: _quantity,
+    );
+    if (!v.ok) {
+      _snack(v.message!, isError: true);
+      return;
     }
+
+    final shopName = _selectedShop!['nombre_comercial'] ??
+        (_selectedShop!['profiles'] != null
+            ? _selectedShop!['profiles']['full_name']
+            : null) ??
+        'Cliente';
+    final price = (_selectedProduct!['price'] as num).toDouble();
+
+    final err = await provider.addOrder(
+      shopName,
+      _selectedProduct!['id'] as String,
+      _selectedProduct!['name'] as String,
+      _quantity,
+      price,
+      deliveryLatitude: _selectedShop!['latitud_comercial'],
+      deliveryLongitude: _selectedShop!['longitud_comercial'],
+      deliveryAddress: _selectedShop!['direccion'],
+      clientUserId: _selectedShop!['profile_id'],
+      clientPhone: _selectedShop!['profiles'] != null
+          ? _selectedShop!['profiles']['celular']
+          : null,
+    );
+
+    if (err != null) {
+      _snack(err, isError: true);
+      return;
+    }
+
+    if (!mounted) return;
+    showPremiumSuccessDialog(
+      context,
+      title: 'Venta Registrada',
+      message: provider.isOnline
+          ? 'Sincronizada con el backend (${v.totalKg.toStringAsFixed(1)} kg).'
+          : 'Guardada localmente; se sincronizará al recuperar conexión.',
+    );
+    setState(() {
+      _selectedShop = null;
+      _searchController.clear();
+      _selectedProduct = null;
+      _quantity = 1;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
+    final currencyFormatter = NumberFormat.simpleCurrency(
+      locale: 'es_PY',
+      name: 'Gs',
+      decimalDigits: 0,
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -312,54 +295,79 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                 const SizedBox(height: 20),
               ],
 
-              // --- 3. CONFIGURACIÓN DEL DESPACHO DE PRODUCTO ---
-              DropdownButtonFormField<Map<String, dynamic>>(
-                value: _selectedProduct,
-                dropdownColor: Colors.white,
-                style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
-                decoration: InputDecoration(
-                  labelText: 'Formato de Hielo',
-                  labelStyle: const TextStyle(color: Color(0xFF64748B)),
-                  floatingLabelStyle: const TextStyle(color: Colors.black),
-                  prefixIcon: const Icon(
-                    Icons.ac_unit,
-                    color: Color(0xFF475569),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  enabledBorder: OutlineInputBorder(
+              // --- 3. CONFIGURACIÓN DEL DESPACHO DE PRODUCTO (catálogo real) ---
+              if (provider.catalogProducts.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Colors.black,
-                      width: 1.5,
+                  child: Row(
+                    children: const [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Cargando catálogo desde el backend…',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                DropdownButtonFormField<Map<String, dynamic>>(
+                  value: _selectedProduct,
+                  dropdownColor: Colors.white,
+                  style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
+                  decoration: InputDecoration(
+                    labelText: 'Formato de Hielo',
+                    labelStyle: const TextStyle(color: Color(0xFF64748B)),
+                    floatingLabelStyle: const TextStyle(color: Colors.black),
+                    prefixIcon: const Icon(
+                      Icons.ac_unit,
+                      color: Color(0xFF475569),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: Colors.black,
+                        width: 1.5,
+                      ),
                     ),
                   ),
+                  items: provider.catalogProducts.map((prod) {
+                    final name = prod['name'] as String? ?? 'Producto';
+                    final price = (prod['price'] as num?)?.toDouble() ?? 0;
+                    final weight = (prod['weightKg'] as num?)?.toDouble() ?? 0;
+                    final stock = (prod['stock'] as num?)?.toInt() ?? 0;
+                    return DropdownMenuItem<Map<String, dynamic>>(
+                      value: prod,
+                      child: Text(
+                        '$name • ${weight.toStringAsFixed(0)}kg • Stock $stock • ${currencyFormatter.format(price)}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setState(() => _selectedProduct = val),
+                  validator: (val) =>
+                      val == null ? 'Selecciona un producto' : null,
                 ),
-                items: _catalog.map((prod) {
-                  return DropdownMenuItem<Map<String, dynamic>>(
-                    value: prod,
-                    child: Text(
-                      '${prod['name']} (Precio de lista: \$${prod['price']})',
-                    ),
-                  );
-                }).toList(),
-                onChanged: (val) {
-                  setState(() {
-                    _selectedProduct = val;
-                    if (val != null) {
-                      _priceController.text = (val['price'] as double)
-                          .toStringAsFixed(2);
-                    }
-                  });
-                },
-              ),
               const SizedBox(height: 16),
 
-              // --- 4. NUEVA TARJETA PREDICTIVA DE PRODUCTO RECOMENDADO (MINIMALISTA ESTILO CLIENTE) ---
+              // --- 4. RESUMEN DEL PRODUCTO SELECCIONADO ---
               if (_selectedProduct != null) ...[
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -373,11 +381,18 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                     children: [
                       Row(
                         children: [
-                          Image.asset(
-                            _selectedProduct!['image'] as String,
-                            height: 50,
+                          Container(
                             width: 50,
-                            fit: BoxFit.contain,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE0F2FE),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.ac_unit,
+                              size: 28,
+                              color: Color(0xFF0284C7),
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -394,11 +409,20 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  _selectedProduct!['description'] as String,
+                                  'Peso unitario: ${((_selectedProduct!['weightKg'] as num).toDouble()).toStringAsFixed(1)} kg • Stock disponible: ${(_selectedProduct!['stock'] as num).toInt()}',
                                   style: GoogleFonts.openSans(
                                     fontSize: 12,
                                     color: const Color(0xFF64748B),
                                     height: 1.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Precio de lista: ${currencyFormatter.format((_selectedProduct!['price'] as num).toDouble())}',
+                                  style: GoogleFonts.openSans(
+                                    fontSize: 12,
+                                    color: const Color(0xFF0284C7),
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
@@ -406,47 +430,6 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                           ),
                         ],
                       ),
-
-                      // Alerta inteligente de compra frecuente del local
-                      if (_selectedShop != null) ...[
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Divider(
-                            color: Color(0xFFF1F5F9),
-                            thickness: 1,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.cyan.withOpacity(0.04),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.cyan.withOpacity(0.12),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.analytics_outlined,
-                                color: Colors.cyan,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _selectedProduct!['recommendation'] as String,
-                                  style: GoogleFonts.openSans(
-                                    fontSize: 11,
-                                    color: const Color(0xFF334155),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -505,43 +488,6 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 16),
-
-              // Input de Precio Pactado Mayorista
-              TextFormField(
-                controller: _priceController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                style: const TextStyle(color: Color(0xFF0F172A)),
-                decoration: InputDecoration(
-                  labelText: 'Precio Pactado Final (\$)',
-                  labelStyle: const TextStyle(color: Color(0xFF64748B)),
-                  floatingLabelStyle: const TextStyle(color: Colors.black),
-                  prefixIcon: const Icon(
-                    Icons.monetization_on_outlined,
-                    color: Color(0xFF475569),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Colors.black,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-                validator: (val) {
-                  if (val == null || val.isEmpty)
-                    return 'Introduce el precio pactado';
-                  return null;
-                },
               ),
               const SizedBox(height: 28),
 
