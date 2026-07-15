@@ -72,11 +72,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
       return;
     }
 
-    final shopName = _selectedShop!['nombre_comercial'] ??
-        (_selectedShop!['profiles'] != null
-            ? _selectedShop!['profiles']['full_name']
-            : null) ??
-        'Cliente';
+    final shopName = _selectedShop!['name'] ?? 'Cliente';
     final price = (_selectedProduct!['price'] as num).toDouble();
 
     final err = await provider.addOrder(
@@ -85,13 +81,15 @@ class _CreateOrderViewState extends State<CreateOrderView> {
       _selectedProduct!['name'] as String,
       _quantity,
       price,
-      deliveryLatitude: _selectedShop!['latitud_comercial'],
-      deliveryLongitude: _selectedShop!['longitud_comercial'],
-      deliveryAddress: _selectedShop!['direccion'],
-      clientUserId: _selectedShop!['profile_id'],
-      clientPhone: _selectedShop!['profiles'] != null
-          ? _selectedShop!['profiles']['celular']
+      deliveryLatitude: _selectedShop!['latitude'] != null
+          ? (_selectedShop!['latitude'] as num).toDouble()
           : null,
+      deliveryLongitude: _selectedShop!['longitude'] != null
+          ? (_selectedShop!['longitude'] as num).toDouble()
+          : null,
+      deliveryAddress: _selectedShop!['address'],
+      clientUserId: _selectedShop!['id'],
+      clientPhone: _selectedShop!['phone'],
     );
 
     if (err != null) {
@@ -146,8 +144,8 @@ class _CreateOrderViewState extends State<CreateOrderView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // --- 1. SELECCIONADOR DE LOCALES MAYORISTAS ---
-              DropdownButtonFormField<Map<String, dynamic>>(
-                value: _selectedShop,
+              DropdownButtonFormField<String>(
+                value: _selectedShop?['id'] as String?,
                 dropdownColor: Colors.white,
                 style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                 decoration: InputDecoration(
@@ -173,19 +171,22 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                   ),
                 ),
                 items: provider.clienteShops.map((shop) {
-                  final bName =
-                      shop['nombre_comercial'] ??
-                      shop['business_name'] ??
-                      'Local Sin Nombre';
-                  final oName = shop['profiles'] != null
-                      ? (shop['profiles']['full_name'] ?? 'Propietario')
-                      : 'Propietario';
-                  return DropdownMenuItem<Map<String, dynamic>>(
-                    value: shop,
-                    child: Text('$bName (Dueño: $oName)'),
+                  final id = shop['id'] as String? ?? '';
+                  final bName = shop['name'] ?? 'Local Sin Nombre';
+                  final ruc = shop['tax_id'] ?? 'S/D';
+                  return DropdownMenuItem<String>(
+                    value: id,
+                    child: Text('$bName (RUC: $ruc)'),
                   );
                 }).toList(),
-                onChanged: (val) => setState(() => _selectedShop = val),
+                onChanged: (val) {
+                  setState(() {
+                    _selectedShop = provider.clienteShops.firstWhere(
+                      (s) => s['id'] == val,
+                      orElse: () => <String, dynamic>{},
+                    );
+                  });
+                },
                 validator: (val) =>
                     val == null ? 'Selecciona un establecimiento' : null,
               ),
@@ -216,14 +217,8 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                       Row(
                         children: [
                           buildAvatarHelper(
-                            _selectedShop!['profiles'] != null
-                                ? (_selectedShop!['profiles']['full_name'] ??
-                                      'Cliente')
-                                : 'Cliente',
-                            _selectedShop!['profiles'] != null
-                                ? (_selectedShop!['profiles']['avatar_url']
-                                      as String?)
-                                : null,
+                            _selectedShop!['name'] ?? 'Cliente',
+                            null,
                             radius: 26,
                           ),
                           const SizedBox(width: 12),
@@ -232,9 +227,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _selectedShop!['nombre_comercial'] ??
-                                      _selectedShop!['business_name'] ??
-                                      'Comercio Registrado',
+                                  _selectedShop!['name'] ?? 'Comercio Registrado',
                                   style: GoogleFonts.outfit(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
@@ -243,7 +236,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Propietario: ${_selectedShop!['profiles'] != null ? (_selectedShop!['profiles']['full_name'] ?? "No especificado") : "No especificado"}',
+                                  'Celular: ${_selectedShop!['phone'] ?? "No especificado"}',
                                   style: GoogleFonts.openSans(
                                     fontSize: 12,
                                     color: const Color(0xFF64748B),
@@ -273,21 +266,19 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                       _buildInfoRow(
                         Icons.email_outlined,
                         "Correo:",
-                        _selectedShop!['profiles'] != null
-                            ? (_selectedShop!['profiles']['email'] ?? "S/D")
-                            : "S/D",
+                        _selectedShop!['email'] ?? "S/D",
                       ),
                       const SizedBox(height: 6),
                       _buildInfoRow(
                         Icons.badge_outlined,
-                        "DNI / RUT:",
-                        _selectedShop!['dni'] ?? "S/D",
+                        "DNI / RUC:",
+                        _selectedShop!['tax_id'] ?? "S/D",
                       ),
                       const SizedBox(height: 6),
                       _buildInfoRow(
                         Icons.pin_drop_outlined,
                         "Dirección comercial:",
-                        _selectedShop!['direccion'] ??
+                        _selectedShop!['address'] ??
                             "Dirección comercial fija en ruta",
                       ),
                     ],
@@ -323,8 +314,8 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                   ),
                 )
               else
-                DropdownButtonFormField<Map<String, dynamic>>(
-                  value: _selectedProduct,
+                DropdownButtonFormField<String>(
+                  value: _selectedProduct?['id'] as String?,
                   dropdownColor: Colors.white,
                   style: GoogleFonts.outfit(color: const Color(0xFF0F172A)),
                   decoration: InputDecoration(
@@ -350,19 +341,27 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                     ),
                   ),
                   items: provider.catalogProducts.map((prod) {
+                    final id = prod['id'] as String;
                     final name = prod['name'] as String? ?? 'Producto';
                     final price = (prod['price'] as num?)?.toDouble() ?? 0;
                     final weight = (prod['weightKg'] as num?)?.toDouble() ?? 0;
                     final stock = (prod['stock'] as num?)?.toInt() ?? 0;
-                    return DropdownMenuItem<Map<String, dynamic>>(
-                      value: prod,
+                    return DropdownMenuItem<String>(
+                      value: id,
                       child: Text(
                         '$name • ${weight.toStringAsFixed(0)}kg • Stock $stock • ${currencyFormatter.format(price)}',
                         overflow: TextOverflow.ellipsis,
                       ),
                     );
                   }).toList(),
-                  onChanged: (val) => setState(() => _selectedProduct = val),
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedProduct = provider.catalogProducts.firstWhere(
+                        (p) => p['id'] == val,
+                        orElse: () => <String, dynamic>{},
+                      );
+                    });
+                  },
                   validator: (val) =>
                       val == null ? 'Selecciona un producto' : null,
                 ),
