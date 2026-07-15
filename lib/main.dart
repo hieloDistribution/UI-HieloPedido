@@ -28,7 +28,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<OrderProvider>();
     final user = provider.currentUser;
-    final isAuthed = initialAuthenticated || user != null;
+    final isAuthed = provider.isHydrated ? (user != null) : initialAuthenticated;
 
     return MaterialApp(
       title: 'Hielo Distribution',

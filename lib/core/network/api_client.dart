@@ -48,9 +48,10 @@ class ApiClient {
     String path, {
     Object? body,
     bool retryOn401 = true,
+    bool withAuth = true,
   }) async {
     final uri = _uri(service, path);
-    final headers = await _headers();
+    final headers = await _headers(withAuth: withAuth);
     http.Response resp;
     switch (method) {
       case 'GET':
@@ -72,10 +73,10 @@ class ApiClient {
       default:
         throw ArgumentError('Unsupported method $method');
     }
-    if (resp.statusCode == 401 && retryOn401) {
+    if (resp.statusCode == 401 && retryOn401 && withAuth) {
       final rotated = await _tryRefresh();
       if (rotated) {
-        return _send(method, service, path, body: body, retryOn401: false);
+        return _send(method, service, path, body: body, retryOn401: false, withAuth: withAuth);
       } else {
         await TokenStorage.instance.clear();
       }
@@ -108,11 +109,11 @@ class ApiClient {
     }
   }
 
-  Future<http.Response> get(String service, String path) =>
-      _send('GET', service, path);
+  Future<http.Response> get(String service, String path, {bool withAuth = true}) =>
+      _send('GET', service, path, withAuth: withAuth);
 
-  Future<http.Response> post(String service, String path, [Object? body]) =>
-      _send('POST', service, path, body: body);
+  Future<http.Response> post(String service, String path, [Object? body, bool withAuth = true]) =>
+      _send('POST', service, path, body: body, withAuth: withAuth);
 
   Future<http.Response> patch(String service, String path, [Object? body]) =>
       _send('PATCH', service, path, body: body);

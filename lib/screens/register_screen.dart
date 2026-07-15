@@ -25,21 +25,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _dniController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _plateController = TextEditingController();
   final _businessNameController = TextEditingController();
 
   LatLng? _selectedBusinessLocation;
 
   bool _obscurePassword = true;
-  String _selectedRole = 'repartidor'; // 'repartidor' or 'cliente'
-  String _selectedVehicle = 'Moto'; // 'Moto' or 'Auto'
+  String _selectedRole = 'vendedor'; // 'vendedor' or 'cliente'
   int _currentStep = 1;
   bool _isGeocoding = false;
 
   // Paleta de colores local limpia y segura
   static const Color slate300 = Color(0xFFCBD5E1);
   static const Color slate400 = Color(0xFF94A3B8);
-  static const Color slate800 = Color(0xFF1E293B);
   static const Color slate900 = Color(0xFF0F172A);
 
   @override
@@ -58,7 +55,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _dniController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
-    _plateController.dispose();
     _businessNameController.dispose();
     super.dispose();
   }
@@ -226,7 +222,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final fullName = _nameController.text.trim();
       final role = _selectedRole;
-      final avatarUrl = role == 'repartidor'
+      final avatarUrl = role == 'vendedor'
           ? 'assets/repartidor.png'
           : 'assets/cliente.png';
 
@@ -242,8 +238,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         nombreComercial: role == 'cliente' ? _businessNameController.text.trim() : null,
         latitudComercial: role == 'cliente' ? _selectedBusinessLocation?.latitude : null,
         longitudComercial: role == 'cliente' ? _selectedBusinessLocation?.longitude : null,
-        tipoVehiculo: role == 'repartidor' ? _selectedVehicle : null,
-        matricula: role == 'repartidor' ? _plateController.text.trim() : null,
+        tipoVehiculo: null,
+        matricula: null,
       );
       if (mounted) {
         final loginContext = context;
@@ -397,7 +393,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               Expanded(
                                 child: GestureDetector(
                                   onTap: () => setState(() {
-                                    _selectedRole = 'repartidor';
+                                    _selectedRole = 'vendedor';
                                     _currentStep = 1; // Reset steps when switching role
                                   }),
                                   child: AnimatedContainer(
@@ -407,10 +403,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       color: Colors.black,
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: _selectedRole == 'repartidor'
+                                        color: _selectedRole == 'vendedor'
                                             ? Colors.cyanAccent
                                             : Colors.white12,
-                                        width: 1.5,
                                       ),
                                     ),
                                     child: Center(
@@ -481,7 +476,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ],
 
                           // Avatar de Perfil Dinámico (Solo en pantallas donde ya se ingresó nombre)
-                          if (_selectedRole == 'repartidor' || _currentStep == 2) ...[
+                          if (_selectedRole == 'vendedor' || _currentStep == 2) ...[
                             Center(
                               child: Container(
                                 width: 100,
@@ -504,7 +499,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   borderRadius: BorderRadius.circular(50),
                                   child: _nameController.text.trim().isEmpty
                                       ? Image.asset(
-                                          _selectedRole == 'repartidor'
+                                          _selectedRole == 'vendedor'
                                               ? 'assets/repartidor.png'
                                               : 'assets/cliente.png',
                                           fit: BoxFit.cover,
@@ -776,7 +771,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               obscureText: _obscurePassword,
                               style: const TextStyle(color: Colors.white),
                               decoration: _buildInputDecoration(
-                                hint: 'Mínimo 6 caracteres',
+                                hint: 'Mínimo 8 caracteres',
                                 prefix: const Padding(
                                       padding: EdgeInsets.all(12.0),
                                       child: HugeIcon(
@@ -799,8 +794,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       ),
                                     ),
                                   ),
-                              validator: (val) => (val == null || val.length < 6)
-                                  ? 'Contraseña muy corta'
+                              validator: (val) => (val == null || val.length < 8)
+                                  ? 'Contraseña muy corta (mínimo 8 caracteres)'
                                   : null,
                             ),
                             const SizedBox(height: 28),
@@ -873,7 +868,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ],
 
                           // VISTA PREVENTISTA: REGISTRO DIRECTO SIN PASOS
-                          if (_selectedRole == 'repartidor') ...[
+                          if (_selectedRole == 'vendedor') ...[
                             _buildFieldLabel('Nombre y Apellido'),
                             TextFormField(
                               controller: _nameController,
@@ -922,7 +917,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               obscureText: _obscurePassword,
                               style: const TextStyle(color: Colors.white),
                               decoration: _buildInputDecoration(
-                                hint: 'Mínimo 6 caracteres',
+                                hint: 'Mínimo 8 caracteres',
                                 prefix: const Padding(
                                       padding: EdgeInsets.all(12.0),
                                       child: HugeIcon(
@@ -945,58 +940,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       ),
                                     ),
                                   ),
-                              validator: (val) => (val == null || val.length < 6)
-                                  ? 'Contraseña muy corta'
-                                  : null,
-                            ),
-                            const SizedBox(height: 16),
-
-                            _buildFieldLabel('Tipo de Vehículo'),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.03),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.white.withOpacity(0.08)),
-                              ),
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<String>(
-                                  value: _selectedVehicle,
-                                  dropdownColor: slate800,
-                                  style: GoogleFonts.outfit(color: Colors.white, fontSize: 15),
-                                  icon: const Icon(Icons.arrow_drop_down, color: Colors.cyanAccent),
-                                  isExpanded: true,
-                                  items: ['Moto', 'Auto', 'Camión'].map((String value) {
-                                    return DropdownMenuItem<String>(
-                                      value: value,
-                                      child: Text(value),
-                                    );
-                                  }).toList(),
-                                  onChanged: (val) {
-                                    if (val != null) {
-                                      setState(() => _selectedVehicle = val);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-
-                            _buildFieldLabel('Matrícula / Patente del Vehículo'),
-                            TextFormField(
-                              controller: _plateController,
-                              style: const TextStyle(color: Colors.white),
-                              decoration: _buildInputDecoration(
-                                hint: 'Ej: AAA 123 PY',
-                                prefix: const Icon(
-                                  Icons.numbers_outlined,
-                                  color: Colors.cyanAccent,
-                                  size: 20,
-                                ),
-                              ),
-                              validator: (val) =>
-                                  (val == null || val.trim().isEmpty)
-                                  ? 'Ingresa la patente'
+                              validator: (val) => (val == null || val.length < 8)
+                                  ? 'Contraseña muy corta (mínimo 8 caracteres)'
                                   : null,
                             ),
                             const SizedBox(height: 28),

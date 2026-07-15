@@ -67,12 +67,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
                 const ClienteOrdersHistoryView(),
                 const ProfileSection(),
               ]
-            : [
-                const RepartidorInicioView(),
-                DistributorOrdersDashboard(),
-                const CreateOrderView(),
-                const ProfileSection(),
-              ]);
+            : (role == 'vendedor'
+                ? [
+                    const RepartidorInicioView(),
+                    const CreateOrderView(),
+                    const ProfileSection(),
+                  ]
+                : [
+                    const RepartidorInicioView(),
+                    DistributorOrdersDashboard(),
+                    const ProfileSection(),
+                  ]));
     return _screens!;
   }
 
@@ -101,15 +106,20 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
                   BottomNavItem(icon: Icons.history_outlined, label: 'Pedidos'),
                   BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
                 ]
-              : [
-                  BottomNavItem(icon: Icons.home_outlined, label: 'Inicio'),
-                  BottomNavItem(
-                    icon: Icons.local_shipping_outlined,
-                    label: 'Viajes',
-                  ),
-                  BottomNavItem(icon: Icons.add_circle_outline, label: 'Nuevo'),
-                  BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
-                ]);
+              : (userRole == 'vendedor'
+                  ? [
+                      BottomNavItem(icon: Icons.home_outlined, label: 'Inicio'),
+                      BottomNavItem(icon: Icons.add_circle_outline, label: 'Nuevo'),
+                      BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
+                    ]
+                  : [
+                      BottomNavItem(icon: Icons.home_outlined, label: 'Inicio'),
+                      BottomNavItem(
+                        icon: Icons.local_shipping_outlined,
+                        label: 'Viajes',
+                      ),
+                      BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
+                    ]));
 
     if (_currentIndex >= navItems.length) {
       _currentIndex = 0;

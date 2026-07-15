@@ -36,6 +36,7 @@ class OrderProvider with ChangeNotifier {
   bool _isSyncing = false;
   bool _isOnline = true;
   int _pendingSyncCount = 0;
+  bool _isHydrated = false;
   String _userRole = 'repartidor'; // 'admin' | 'repartidor' | 'cliente'
 
   // --- Identity (from TokenStorage /users/me) --------------------------
@@ -45,6 +46,7 @@ class OrderProvider with ChangeNotifier {
   String? _avatarUrl;
   String? _phone;
   String? _dni;
+  String? _vendorId;
   String? _businessName;
   double? _businessLat;
   double? _businessLng;
@@ -77,6 +79,7 @@ class OrderProvider with ChangeNotifier {
   String? get currentUserAvatarUrl => _avatarUrl;
   String? get currentUserFullName => _fullName;
   String? get currentUserCelular => _phone;
+  String? get vendorId => _vendorId;
   String? get currentUserEmail => _email;
   String? get currentUserId => _userId;
   String? get businessName => _businessName;
@@ -86,6 +89,7 @@ class OrderProvider with ChangeNotifier {
   Position? get currentRepartidorPosition => _currentRepartidorPosition;
   OrderModel? get incomingOrderAlert => _incomingOrderAlert;
   Set<String> get ratedOrderIds => _ratedOrderIds;
+  bool get isHydrated => _isHydrated;
 
   /// Convenience "current user" object for legacy widget code that did
   /// `provider.currentUser?.id`. We expose the JWT subject as `id` and the
@@ -144,6 +148,21 @@ class OrderProvider with ChangeNotifier {
     _userRole = profile['role'] ?? 'repartidor';
     _fullName = profile['full_name'];
     _avatarUrl = profile['avatar_url'];
+    final token = await TokenStorage.instance.getAccessToken();
+    if (token != null && token.isNotEmpty) {
+      try {
+        final parts = token.split('.');
+        if (parts.length == 3) {
+          final payload = parts[1];
+          final normalized = base64Url.normalize(payload);
+          final decoded = jsonDecode(utf8.decode(base64Url.decode(normalized))) as Map<String, dynamic>;
+          _vendorId = decoded['vendor_id'] as String?;
+        }
+      } catch (e) {
+        debugPrint('Error decodificando JWT en bootstrap: $e');
+      }
+    }
+    _isHydrated = true;
     notifyListeners();
   }
 
@@ -201,7 +220,7 @@ class OrderProvider with ChangeNotifier {
       final resp = await ApiClient.instance.post('sync', '/api/v1/auth/login', {
         'email': email,
         'password': password,
-      });
+      }, false); // no enviar token previo en llamadas de auth pública
       if (resp.statusCode != 200) {
         final body = _decode(resp.body);
         throw Exception(body['error'] ?? 'login_failed');
@@ -250,7 +269,7 @@ class OrderProvider with ChangeNotifier {
         // currently keeps them client-side until the repartidor profile
         // is provisioned by an admin.
       };
-      final resp = await ApiClient.instance.post('sync', '/api/v1/auth/signup', body);
+      final resp = await ApiClient.instance.post('sync', '/api/v1/auth/signup', body, false); // no enviar token previo
       if (resp.statusCode != 201) {
         final err = _decode(resp.body);
         throw Exception(err['error'] ?? err['message'] ?? 'signup_failed');
@@ -266,16 +285,26 @@ class OrderProvider with ChangeNotifier {
 
   Future<void> _ingestAuthResponse(String body) async {
     final json = _decode(body);
+    final token = json['access_token'] as String;
     await TokenStorage.instance.save(
-      accessToken: json['access_token'] as String,
+      accessToken: token,
       refreshToken: json['refresh_token'] as String,
       expiresInSeconds: (json['expires_in'] as num?)?.toInt() ?? 900,
       userId: '',
       email: '',
       role: '',
     );
-    // The /auth response doesn't carry user fields, so we will fetch /me
-    // immediately afterward to populate the profile snapshot.
+    try {
+      final parts = token.split('.');
+      if (parts.length == 3) {
+        final payload = parts[1];
+        final normalized = base64Url.normalize(payload);
+        final decoded = jsonDecode(utf8.decode(base64Url.decode(normalized))) as Map<String, dynamic>;
+        _vendorId = decoded['vendor_id'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Error decodificando JWT en login/signup: $e');
+    }
   }
 
   Future<void> refreshUserRole() async {
@@ -294,6 +323,7 @@ class OrderProvider with ChangeNotifier {
       _avatarUrl = json['avatar_url'] as String?;
       _phone = json['phone'] as String?;
       _dni = json['dni'] as String?;
+      _vendorId = json['vendor_id'] as String?;
       _businessName = json['business_name'] as String?;
       _businessLat = (json['business_lat'] as num?)?.toDouble();
       _businessLng = (json['business_lng'] as num?)?.toDouble();
@@ -348,7 +378,7 @@ class OrderProvider with ChangeNotifier {
         try {
           await ApiClient.instance.post('sync', '/api/v1/auth/logout', {
             'refresh_token': refresh,
-          });
+          }, false); // logout es público — no enviar token expirado
         } catch (_) {/* best-effort */}
       }
       _stopLocationReporting();
@@ -356,11 +386,12 @@ class OrderProvider with ChangeNotifier {
       await OrdersSocket.instance.disconnect();
       await TokenStorage.instance.clear();
       await _db.clearAllOrders();
+      await _db.clearAllMutations();
       _orders.clear();
       _adminOrders.clear();
       _repartidores.clear();
       _clienteShops.clear();
-      _userId = _email = _fullName = _avatarUrl = _phone = _dni = null;
+      _userId = _email = _fullName = _avatarUrl = _phone = _dni = _vendorId = null;
       _businessName = _businessAddress = null;
       _businessLat = _businessLng = null;
       _userRole = 'repartidor';
@@ -841,10 +872,14 @@ class OrderProvider with ChangeNotifier {
             status = 'CANCELLED';
             break;
         }
+        final salespersonId = _userRole == 'vendedor'
+            ? (_vendorId ?? orderMap['repartidor_id'] ?? orderMap['user_id'])
+            : (orderMap['repartidor_id'] ?? orderMap['user_id']);
+
         final javaOrder = <String, dynamic>{
           'clientOrderId': orderMap['client_order_id'],
           'clientId': orderMap['user_id'],
-          'salespersonId': orderMap['repartidor_id'] ?? orderMap['user_id'],
+          'salespersonId': salespersonId,
           'createdAt': orderMap['created_at'],
           'totalAmount': total,
           if (orderMap['delivery_latitude'] != null)
@@ -913,10 +948,26 @@ class OrderProvider with ChangeNotifier {
       // 200 with success=false → backend rejected (business rule, stock, etc.)
       return (json['message'] as String?) ?? 'El backend rechazó el pedido';
     }
-    // 4xx / 5xx → backend explicitly rejected, surface body.
-    return resp.body.isNotEmpty
-        ? resp.body
-        : 'Error ${resp.statusCode}';
+    // 4xx / 5xx → backend explicitly rejected, extract error code.
+    if (resp.body.isEmpty) return 'Error ${resp.statusCode}';
+    try {
+      final errJson = _decode(resp.body);
+      final code = errJson['error'] as String? ?? '';
+      switch (code) {
+        case 'token_expired':
+          return 'Tu sesión expiró. Cerrá y volvé a iniciar sesión.';
+        case 'token_invalid':
+          return 'Sesión inválida. Iniciá sesión nuevamente.';
+        case 'no_token':
+          return 'No autenticado. Iniciá sesión.';
+        case 'order_service_unavailable':
+          return 'El servidor de pedidos no está disponible. Intentá más tarde.';
+        default:
+          return errJson['message'] as String? ?? resp.body;
+      }
+    } catch (_) {
+      return resp.body;
+    }
   }
 
   // --- Admin ------------------------------------------------------------
