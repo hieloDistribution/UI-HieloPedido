@@ -98,7 +98,7 @@ class OrderModel {
       }
     }
 
-    final String clientOrderId = (map['client_order_id'] ?? map['clientOrderId']) as String;
+    final String clientOrderId = (map['client_order_id'] ?? map['clientOrderId'] ?? map['id'] ?? '') as String;
     final String userId = (map['user_id'] ?? map['client_id'] ?? map['clientId'] ?? '') as String;
     final String clientName = (map['client_name'] ?? map['clientName'] ?? 'Cliente') as String;
     

@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/network/api_client.dart';
 
 String getInitials(String? fullName) {
   if (fullName == null || fullName.trim().isEmpty) return '?';
@@ -22,6 +24,18 @@ Widget buildAvatarHelper(
         radius: radius,
         backgroundColor: const Color(0xFF1E293B),
         backgroundImage: AssetImage(avatarUrl),
+      );
+    } else if (avatarUrl.startsWith('/api/')) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFF1E293B),
+        backgroundImage: NetworkImage('${ApiClient.orderBaseUrl}$avatarUrl'),
+      );
+    } else if (avatarUrl.startsWith('/') || avatarUrl.startsWith('file://') || avatarUrl.contains('cache')) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFF1E293B),
+        backgroundImage: FileImage(File(avatarUrl)),
       );
     } else {
       return CircleAvatar(

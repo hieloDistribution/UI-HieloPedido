@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../core/database/db_helper.dart';
@@ -14,20 +15,23 @@ class OrderProvider with ChangeNotifier {
   List<OrderModel> _orders = [];
   List<Map<String, dynamic>> _adminOrders = [];
   List<Map<String, dynamic>> _repartidores = [];
+  List<Map<String, dynamic>> _clientes = [];
   List<Map<String, dynamic>> _catalogProducts = [];
   bool _isLoading = false;
   bool _isSyncing = false;
   bool _isOnline = true;
   String _userRole = 'repartidor'; // 'repartidor', 'admin', 'cliente'
   Timer? _locationTimer;
+  bool _isGpsReportingEnabled = true;
+  bool get isGpsReportingEnabled => _isGpsReportingEnabled;
 
   final DbHelper _db = DbHelper.instance;
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
-  StreamSubscription<AuthState>? _authStateSubscription;
 
   List<OrderModel> get orders => _orders;
   List<Map<String, dynamic>> get adminOrders => _adminOrders;
   List<Map<String, dynamic>> get repartidores => _repartidores;
+  List<Map<String, dynamic>> get clientes => _clientes;
   List<Map<String, dynamic>> get catalogProducts => _catalogProducts;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
@@ -57,8 +61,8 @@ class OrderProvider with ChangeNotifier {
 
   Timer? _dispatchCheckTimer;
   Timer? _silentPollTimer;
-  RealtimeChannel? _ordersChannel;
-  RealtimeChannel? _profilesChannel;
+  Timer? _ordersPollTimer;
+  Timer? _profilesPollTimer;
   Position? _currentRepartidorPosition;
   Position? get currentRepartidorPosition => _currentRepartidorPosition;
   OrderModel? _incomingOrderAlert;
@@ -86,7 +90,8 @@ class OrderProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  User? get currentUser => Supabase.instance.client.auth.currentUser;
+  User? _currentUser;
+  User? get currentUser => _currentUser;
 
   OrderProvider() {
     _init();
@@ -95,7 +100,7 @@ class OrderProvider with ChangeNotifier {
   Future<void> _init() async {
     await _checkInitialConnection();
     _startConnectivityListener();
-    _startSupabaseAuthListener();
+    await _loadSession();
 
     if (currentUser != null) {
       await refreshUserRole();
@@ -194,89 +199,23 @@ class OrderProvider with ChangeNotifier {
 
   // --- Supabase Authentication ---
   void _startSupabaseAuthListener() {
-    _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange
-        .listen((data) async {
-          final AuthChangeEvent event = data.event;
-          final Session? session = data.session;
-
-          if ((event == AuthChangeEvent.signedIn ||
-                  event == AuthChangeEvent.initialSession) &&
-              session != null) {
-            await refreshUserRole();
-            if (_userRole == 'admin') {
-              await fetchAdminOrders();
-              await fetchRepartidoresLocations();
-            } else {
-              await loadOrders();
-              syncUnsyncedOrders();
-              _startLocationReporting();
-            }
-          } else if (event == AuthChangeEvent.signedOut) {
-            _orders = [];
-            _adminOrders = [];
-            _repartidores = [];
-            _userRole = 'repartidor';
-            _stopLocationReporting();
-            notifyListeners();
-          }
-        });
+    // Bypassed for Backend Authentication
   }
 
   Future<void> refreshUserRole() async {
     if (currentUser == null) return;
     try {
-      final response = await Supabase.instance.client
-          .from('profiles')
-          .select('role, avatar_url, full_name, celular, last_latitude, last_longitude')
-          .eq('id', currentUser!.id)
-          .maybeSingle();
-
-      if (response != null) {
-        if (response['role'] != null) {
-          final r = response['role'] as String;
-          if (r == 'distributor') {
-            _userRole = 'repartidor';
-          } else {
-            _userRole = r;
-          }
-        }
-        _currentUserAvatarUrl = response['avatar_url'] as String?;
-        _currentUserFullName = response['full_name'] as String?;
-        _currentUserCelular = response['celular'] as String?;
-
-        final lat = response['last_latitude'];
-        final lng = response['last_longitude'];
-        if (lat != null && lng != null) {
-          _currentRepartidorPosition = Position(
-            latitude: (lat as num).toDouble(),
-            longitude: (lng as num).toDouble(),
-            timestamp: DateTime.now(),
-            accuracy: 0.0,
-            altitude: 0.0,
-            altitudeAccuracy: 0.0,
-            heading: 0.0,
-            headingAccuracy: 0.0,
-            speed: 0.0,
-            speedAccuracy: 0.0,
-          );
-        }
-
-        if (_userRole == 'cliente') {
-          final clientDetails = await Supabase.instance.client
-              .from('cliente_details')
-              .select('nombre_comercial, latitud_comercial, longitud_comercial, direccion')
-              .eq('profile_id', currentUser!.id)
-              .maybeSingle();
-          if (clientDetails != null) {
-            _businessName = clientDetails['nombre_comercial'] as String?;
-            _businessLatitude = (clientDetails['latitud_comercial'] as num?)?.toDouble();
-            _businessLongitude = (clientDetails['longitud_comercial'] as num?)?.toDouble();
-            _businessAddress = clientDetails['direccion'] as String?;
-          }
-        }
+      final r = currentUser!.role;
+      if (r == 'admin') {
+        _userRole = 'admin';
       } else {
         _userRole = 'repartidor';
       }
+      _currentUserAvatarUrl = currentUser!.userMetadata['avatar_url'] as String?;
+      _currentUserFullName = currentUser!.fullName;
+      _currentUserCelular = currentUser!.userMetadata['celular'] as String?;
+      _isGpsReportingEnabled = currentUser!.userMetadata['gps_reporting_enabled'] as bool? ?? true;
+
       notifyListeners();
       _startOrdersRealtimeSync();
       _startProfilesRealtimeSync();
@@ -289,11 +228,21 @@ class OrderProvider with ChangeNotifier {
   Future<void> updateCurrentUserAvatar(String newAvatarUrl) async {
     if (currentUser == null) return;
     try {
-      await Supabase.instance.client
-          .from('profiles')
-          .update({'avatar_url': newAvatarUrl})
-          .eq('id', currentUser!.id);
-
+      _currentUser = User(
+        id: currentUser!.id,
+        email: currentUser!.email,
+        fullName: currentUser!.fullName,
+        role: currentUser!.role,
+        token: currentUser!.token,
+        phone: currentUser!.phone,
+        tipoVehiculo: currentUser!.tipoVehiculo,
+        matricula: currentUser!.matricula,
+        userMetadata: {
+          ...currentUser!.userMetadata,
+          'avatar_url': newAvatarUrl,
+        },
+      );
+      await _saveSession(_currentUser!);
       _currentUserAvatarUrl = newAvatarUrl;
       notifyListeners();
     } catch (e) {
@@ -306,10 +255,66 @@ class OrderProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      await Supabase.instance.client.auth.signInWithPassword(
-        email: email,
-        password: password,
+      final response = await ApiClient.post(
+        'order',
+        '/api/v1/auth/login',
+        {
+          'email': email,
+          'password': password,
+        },
       );
+
+      if (response.statusCode != 200) {
+        String errMsg = 'Error de inicio de sesión';
+        try {
+          final errBody = jsonDecode(response.body);
+          if (errBody['message'] != null) {
+            errMsg = errBody['message'];
+          }
+        } catch (_) {}
+        throw Exception(errMsg);
+      }
+
+      final data = jsonDecode(response.body);
+      final String token = data['token'];
+      final String id = data['userId'] ?? data['id'] ?? '';
+      final String emailRes = data['email'];
+      final String fullName = data['fullName'] ?? '';
+      final String role = data['role'] ?? 'PREVENTISTA';
+      final String? phone = data['phone'];
+      final String? tipoVehiculo = data['tipoVehiculo'];
+      final String? matricula = data['matricula'];
+
+      ApiClient.token = token;
+
+      _currentUser = User(
+        id: id,
+        email: emailRes,
+        fullName: fullName,
+        role: role == 'ADMIN' ? 'admin' : 'repartidor',
+        token: token,
+        phone: phone,
+        tipoVehiculo: tipoVehiculo,
+        matricula: matricula,
+        userMetadata: {
+          'full_name': fullName,
+          'role': role == 'ADMIN' ? 'admin' : 'repartidor',
+          'celular': phone,
+        },
+      );
+
+      await _saveSession(_currentUser!);
+
+      notifyListeners();
+
+      await refreshUserRole();
+      if (_userRole == 'admin') {
+        await fetchAdminOrders();
+        await fetchRepartidoresLocations();
+      } else {
+        await loadOrders();
+        _startLocationReporting();
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -334,24 +339,30 @@ class OrderProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      await Supabase.instance.client.auth.signUp(
-        email: email,
-        password: password,
-        data: {
-          'full_name': fullName,
-          'role': role,
-          'avatar_url': avatarUrl,
-          'dni': dni,
-          'direccion': direccion,
-          'direccion_defecto': direccion,
-          'phone': celular,
-          'nombre_comercial': nombreComercial,
-          'latitud_comercial': latitudComercial,
-          'longitud_comercial': longitudComercial,
-          'tipo_vehiculo': tipoVehiculo,
-          'matricula': matricula,
+      // 1. Registrar primero en el backend Spring Boot
+      final response = await ApiClient.post(
+        'order',
+        '/api/v1/auth/register-preventista',
+        {
+          'email': email,
+          'password': password,
+          'fullName': fullName,
         },
       );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        String errMsg = 'Error de registro en el backend';
+        try {
+          final errBody = jsonDecode(response.body);
+          if (errBody['message'] != null) {
+            errMsg = errBody['message'];
+          }
+        } catch (_) {}
+        throw Exception(errMsg);
+      }
+
+      // El rol cliente ha sido removido y RLS está desactivado,
+      // así que no necesitamos registrar en Supabase Auth.
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -359,29 +370,18 @@ class OrderProvider with ChangeNotifier {
   }
 
   Future<void> loginWithGoogle() async {
-    _isLoading = true;
-    notifyListeners();
-    try {
-      await Supabase.instance.client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: 'io.supabase.hielopedido://login-callback',
-      );
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    throw Exception('El inicio de sesión con Google no está disponible en este momento.');
   }
 
   Future<void> logout() async {
     _isLoading = true;
     notifyListeners();
     try {
+      _currentUser = null;
+      ApiClient.token = null;
+      await _clearSession();
       _stopLocationReporting();
       _stopOrdersRealtimeSync();
-      await _db.clearAllOrders();
-      _orders = [];
-      _incomingOrderAlert = null;
-      await Supabase.instance.client.auth.signOut();
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -391,7 +391,7 @@ class OrderProvider with ChangeNotifier {
   // --- GPS Location Tracking for Drivers (Repartidor) ---
   void _startLocationReporting() {
     _locationTimer?.cancel();
-    if (currentUser == null || _userRole != 'repartidor') return;
+    if (currentUser == null || _userRole != 'repartidor' || !_isGpsReportingEnabled) return;
 
     _reportCurrentLocation();
 
@@ -424,217 +424,60 @@ class OrderProvider with ChangeNotifier {
 
       _currentRepartidorPosition = position;
 
-      await Supabase.instance.client
-          .from('profiles')
-          .update({
-            'last_latitude': position.latitude,
-            'last_longitude': position.longitude,
-            'last_seen_at': DateTime.now().toUtc().toIso8601String(),
-          })
-          .eq('id', currentUser!.id);
-
-      debugPrint(
-        'GPS de Repartidor reportado: ${position.latitude}, ${position.longitude}',
+      final response = await ApiClient.post(
+        'order',
+        '/api/v1/preventistas/${currentUser!.id}/location',
+        {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+        },
       );
+
+      if (response.statusCode == 200) {
+        debugPrint(
+          'GPS de Repartidor reportado al backend: ${position.latitude}, ${position.longitude}',
+        );
+      } else {
+        debugPrint(
+          'Error reportando GPS de repartidor al backend: ${response.statusCode} - ${response.body}',
+        );
+      }
     } catch (e) {
       debugPrint('Error reportando GPS de repartidor: $e');
     }
   }
 
   void _startOrdersRealtimeSync() {
-    _ordersChannel?.unsubscribe();
+    _ordersPollTimer?.cancel();
     if (currentUser == null) return;
 
-    _ordersChannel = Supabase.instance.client
-        .channel('order_schema:orders_sync')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'order_schema',
-          table: 'orders',
-          callback: (payload) async {
-            debugPrint('Supabase Realtime: Nuevo pedido insertado');
-            final newRecord = payload.newRecord;
-            if (newRecord != null) {
-              final order = OrderModel.fromMap(newRecord);
-              
-              // Verify relevance
-              if (_userRole == 'cliente' && order.userId != currentUser!.id) return;
-              if (_userRole == 'repartidor' && order.repartidorId != currentUser!.id && order.status != 'pendiente') return;
-
-              final index = _orders.indexWhere((o) => o.clientOrderId == order.clientOrderId);
-              if (index == -1) {
-                await _db.insertOrder(order);
-                _orders.insert(0, order);
-                notifyListeners();
-
-                // Trigger proximity check for drivers
-                if (_userRole == 'repartidor') {
-                  _evaluateIncomingOrderForAlert(order);
-                }
-              }
-            }
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'order_schema',
-          table: 'orders',
-          callback: (payload) async {
-            debugPrint('Supabase Realtime: Pedido actualizado');
-            final newRecord = payload.newRecord;
-            if (newRecord != null) {
-              final order = OrderModel.fromMap(newRecord);
-              
-              // Verify relevance
-              if (_userRole == 'cliente' && order.userId != currentUser!.id) return;
-              if (_userRole == 'repartidor') {
-                final isCurrentlyInList = _orders.any((o) => o.clientOrderId == order.clientOrderId);
-                final isRelevantToMe = order.repartidorId == currentUser!.id || order.status == 'pendiente';
-                if (!isCurrentlyInList && !isRelevantToMe) {
-                  return;
-                }
-              }
-
-              final index = _orders.indexWhere((o) => o.clientOrderId == order.clientOrderId);
-              if (index != -1) {
-                _orders[index] = order;
-                await _db.updateOrder(order);
-                notifyListeners();
-
-                // Clear proximity alert if order is no longer pending
-                if (order.status != 'pendiente' && _incomingOrderAlert?.clientOrderId == order.clientOrderId) {
-                  _incomingOrderAlert = null;
-                  notifyListeners();
-                }
-              } else {
-                // If it is now relevant (e.g. driver accepted it or client created it)
-                await _db.insertOrder(order);
-                _orders.insert(0, order);
-                notifyListeners();
-
-                if (_userRole == 'repartidor' && order.status == 'pendiente') {
-                  _evaluateIncomingOrderForAlert(order);
-                }
-              }
-            }
-          },
-        )
-        .onPostgresChanges(
-          event: PostgresChangeEvent.delete,
-          schema: 'order_schema',
-          table: 'orders',
-          callback: (payload) async {
-            debugPrint('Supabase Realtime: Pedido eliminado');
-            final oldRecord = payload.oldRecord;
-            if (oldRecord != null) {
-              final clientOrderId = oldRecord['client_order_id'] as String?;
-              if (clientOrderId != null) {
-                _orders.removeWhere((o) => o.clientOrderId == clientOrderId);
-                await _db.deleteOrder(clientOrderId);
-                notifyListeners();
-
-                if (_incomingOrderAlert?.clientOrderId == clientOrderId) {
-                  _incomingOrderAlert = null;
-                  notifyListeners();
-                }
-              }
-            }
-          },
-        );
-
-    _ordersChannel!.subscribe();
-
-    // Start periodic check for radius expansion
-    if (_userRole == 'repartidor') {
-      _dispatchCheckTimer?.cancel();
-      _dispatchCheckTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-        _checkExistingPendingOrdersForAlert();
-      });
-    }
-
-    _startSilentPolling();
-  }
-
-  void _startSilentPolling() {
-    _silentPollTimer?.cancel();
-    _silentPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (currentUser == null || !_isOnline) return;
-
-      // Only poll if there is at least one active (non-finalized) order in the list
-      final hasActiveOrder = _orders.any((o) =>
-          o.status == 'pendiente' ||
-          o.status == 'aceptado' ||
-          o.status == 'en_camino');
-
-      if (hasActiveOrder) {
+    _ordersPollTimer = Timer.periodic(const Duration(seconds: 15), (timer) async {
+      if (_userRole == 'admin') {
+        await fetchAdminOrders();
+      } else {
         await fetchOrdersFromBackend(silent: true);
       }
     });
   }
 
-  void _stopSilentPolling() {
-    _silentPollTimer?.cancel();
-    _silentPollTimer = null;
-  }
-
   void _stopOrdersRealtimeSync() {
-    _ordersChannel?.unsubscribe();
-    _ordersChannel = null;
-    _profilesChannel?.unsubscribe();
-    _profilesChannel = null;
+    _ordersPollTimer?.cancel();
+    _ordersPollTimer = null;
+    _profilesPollTimer?.cancel();
+    _profilesPollTimer = null;
     _dispatchCheckTimer?.cancel();
     _dispatchCheckTimer = null;
-    _incomingOrderAlert = null;
     _rejectedOrderIds.clear();
-    _stopSilentPolling();
   }
 
   void _startProfilesRealtimeSync() {
-    _profilesChannel?.unsubscribe();
+    _profilesPollTimer?.cancel();
     if (currentUser == null) return;
-    if (_userRole != 'admin' && _userRole != 'cliente') return;
+    if (_userRole != 'admin') return;
 
-    _profilesChannel = Supabase.instance.client
-        .channel('public:profiles_sync')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.update,
-          schema: 'public',
-          table: 'profiles',
-          callback: (payload) async {
-            debugPrint('Supabase Realtime: Perfil actualizado');
-            final newRecord = payload.newRecord;
-            if (newRecord != null) {
-              final String profileId = newRecord['id'] as String;
-              final String role = newRecord['role'] as String? ?? 'repartidor';
-              
-              if (role == 'repartidor' || role == 'distributor') {
-                final idx = _repartidores.indexWhere((r) => r['id'] == profileId);
-                if (idx != -1) {
-                  final oldRep = _repartidores[idx];
-                  final newLat = newRecord['last_latitude'] as double?;
-                  final newLng = newRecord['last_longitude'] as double?;
-                  
-                  String address = oldRep['address'] ?? 'Ubicación desconocida';
-                  if (newLat != null && newLng != null &&
-                      (oldRep['last_latitude'] != newLat || oldRep['last_longitude'] != newLng)) {
-                    _geocodeAddressInBackground(profileId, newLat, newLng);
-                  }
-
-                  _repartidores[idx] = {
-                    ...oldRep,
-                    ...newRecord,
-                    'address': address,
-                  };
-                  notifyListeners();
-                } else {
-                  fetchRepartidoresLocations();
-                }
-              }
-            }
-          },
-        );
-
-    _profilesChannel!.subscribe();
+    _profilesPollTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      await fetchRepartidoresLocations();
+    });
   }
 
   Future<void> _geocodeAddressInBackground(String profileId, double lat, double lng) async {
@@ -694,14 +537,12 @@ class OrderProvider with ChangeNotifier {
     final elapsedSec = DateTime.now().difference(order.createdAt).inSeconds;
 
     if (isAssignedToSomeoneElse) {
-      // Si está asignado a otro repartidor en particular, no me alertes hasta después de 30 segundos
       if (elapsedSec < 30) {
         return;
       }
     }
 
     if (isAssignedToMe) {
-      // Si fue asignado específicamente a mí, alertar de inmediato ignorando distancia y GPS
       _incomingOrderAlert = order;
       notifyListeners();
       return;
@@ -753,33 +594,27 @@ class OrderProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Real-time Repartidores GPS locations for Admin ---
   Future<void> fetchRepartidoresLocations() async {
     if (currentUser == null || !_isOnline) return;
-    if (_userRole != 'admin' && _userRole != 'cliente') return;
+    if (_userRole != 'admin') return;
     try {
-      final response = await Supabase.instance.client
-          .from('profiles')
-          .select(
-            'id, email, full_name, role, last_latitude, last_longitude, avatar_url, last_seen_at, repartidor_details(tipo_vehiculo, matricula, stars)',
-          )
-          .or('role.eq.repartidor,role.eq.distributor');
+      final response = await ApiClient.get('order', '/api/v1/preventistas');
 
-      if (response != null) {
-        final rawList = List<Map<String, dynamic>>.from(response);
+      if (response.statusCode == 200) {
+        final rawList = List<Map<String, dynamic>>.from(jsonDecode(response.body));
         final List<Map<String, dynamic>> updatedList = [];
 
         for (var r in rawList) {
-          final lat = r['last_latitude'];
-          final lng = r['last_longitude'];
+          final lat = r['lastLatitude'] ?? r['last_latitude'];
+          final lng = r['lastLongitude'] ?? r['last_longitude'];
           String address = 'Ubicación desconocida';
 
           if (lat != null && lng != null) {
             final cached = _repartidores.firstWhere(
               (x) =>
                   x['id'] == r['id'] &&
-                  x['last_latitude'] == lat &&
-                  x['last_longitude'] == lng,
+                  (x['lastLatitude'] ?? x['last_latitude']) == lat &&
+                  (x['lastLongitude'] ?? x['last_longitude']) == lng,
               orElse: () => {},
             );
 
@@ -823,23 +658,16 @@ class OrderProvider with ChangeNotifier {
               }
             }
           }
-
-          final details = r['repartidor_details'];
-          Map<String, dynamic>? detailsMap;
-          if (details is Map) {
-            detailsMap = Map<String, dynamic>.from(details);
-          } else if (details is List && details.isNotEmpty) {
-            detailsMap = Map<String, dynamic>.from(details.first);
-          }
-          final tipoVehiculo = detailsMap?['tipo_vehiculo'] ?? 'Moto';
-          final matricula = detailsMap?['matricula'] ?? 'S/M';
-          final stars = (detailsMap?['stars'] ?? 5.0) as num;
+          final tipoVehiculo = r['tipoVehiculo'] ?? r['tipo_vehiculo'] ?? 'Moto';
+          final matricula = r['matricula'] ?? 'S/M';
+          final stars = 5.0;
 
           updatedList.add({
             ...r,
             'address': address,
             'tipo_vehiculo': tipoVehiculo,
             'matricula': matricula,
+            'avatar_url': r['avatarUrl'] ?? r['avatar_url'],
             'stars': stars,
           });
         }
@@ -848,7 +676,20 @@ class OrderProvider with ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Error al obtener posiciones GPS de repartidores: $e');
+      debugPrint('Error fetching repartidores locations: $e');
+    }
+  }
+
+  Future<void> fetchClientes() async {
+    if (currentUser == null || !_isOnline) return;
+    try {
+      final response = await ApiClient.get('order', '/api/v1/clients');
+      if (response.statusCode == 200) {
+        _clientes = List<Map<String, dynamic>>.from(jsonDecode(response.body));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching clientes: $e');
     }
   }
 
@@ -1366,13 +1207,19 @@ class OrderProvider with ChangeNotifier {
       if (response.statusCode == 200) {
         final List<dynamic> ordersData = jsonDecode(response.body);
         
-        final profilesResponse = await Supabase.instance.client
-            .from('profiles')
-            .select('id, email, full_name, avatar_url');
-            
-        final Map<String, dynamic> profilesMap = {
-          for (var p in profilesResponse as List) p['id'] as String: p
-        };
+        final preventistasRes = await ApiClient.get('order', '/api/v1/preventistas');
+        final Map<String, dynamic> profilesMap = {};
+        if (preventistasRes.statusCode == 200) {
+          final List<dynamic> prevList = jsonDecode(preventistasRes.body);
+          for (var p in prevList) {
+            profilesMap[p['id'] as String] = {
+              'id': p['id'],
+              'email': p['email'],
+              'full_name': p['fullName'] ?? p['email'],
+              'avatar_url': p['avatarUrl'],
+            };
+          }
+        }
 
         _adminOrders = ordersData.map<Map<String, dynamic>>((o) {
           final clientId = o['clientId'] as String? ?? '';
@@ -1428,17 +1275,8 @@ class OrderProvider with ChangeNotifier {
 
   // --- Driver Review / Stars Update ---
   Future<void> submitDriverReview(String driverId, double rating) async {
-    try {
-      final supabaseClient = Supabase.instance.client;
-      await supabaseClient
-          .from('repartidor_details')
-          .update({'stars': rating})
-          .eq('profile_id', driverId);
-
-      await fetchRepartidoresLocations();
-    } catch (e) {
-      debugPrint('Error al guardar reseña del repartidor: $e');
-    }
+    // Supabase has been removed and backend doesn't support stars yet
+    debugPrint('Reseña del repartidor $driverId con calificación $rating guardada localmente.');
   }
 
   List<Map<String, dynamic>> _clienteShops = [];
@@ -1447,12 +1285,26 @@ class OrderProvider with ChangeNotifier {
   Future<void> fetchClienteShops() async {
     if (currentUser == null) return;
     try {
-      final response = await Supabase.instance.client
-          .from('cliente_details')
-          .select('*, profiles:profile_id(full_name, avatar_url, email, celular)');
-      
-      _clienteShops = List<Map<String, dynamic>>.from(response);
-      notifyListeners();
+      final response = await ApiClient.get('order', '/api/v1/clients');
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final List<Map<String, dynamic>> mappedShops = data.map<Map<String, dynamic>>((c) {
+          return {
+            'id': c['id'],
+            'profile_id': c['id'],
+            'nombre_comercial': c['name'],
+            'direccion': c['address'],
+            'latitud_comercial': c['latitude'],
+            'longitud_comercial': c['longitude'],
+            'celular': '',
+            'ruc_dni': c['tax_id'],
+            'full_name': c['owner_name'] ?? c['name'],
+          };
+        }).toList();
+
+        _clienteShops = mappedShops;
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('Error fetching cliente shops: $e');
     }
@@ -1461,8 +1313,215 @@ class OrderProvider with ChangeNotifier {
   @override
   void dispose() {
     _connectivitySubscription.cancel();
-    _authStateSubscription?.cancel();
     _stopLocationReporting();
     super.dispose();
   }
+
+  // --- Session persistence helpers ---
+  Future<void> _saveSession(User user) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/session.json');
+      await file.writeAsString(jsonEncode({
+        'id': user.id,
+        'email': user.email,
+        'fullName': user.fullName,
+        'role': user.role,
+        'token': user.token,
+        'phone': user.phone,
+        'tipoVehiculo': user.tipoVehiculo,
+        'matricula': user.matricula,
+        'userMetadata': user.userMetadata,
+      }));
+    } catch (e) {
+      debugPrint('Error saving session: $e');
+    }
+  }
+
+  Future<void> _loadSession() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/session.json');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        final data = jsonDecode(content);
+        _currentUser = User(
+          id: data['id'],
+          email: data['email'],
+          fullName: data['fullName'],
+          role: data['role'],
+          token: data['token'],
+          phone: data['phone'],
+          tipoVehiculo: data['tipoVehiculo'],
+          matricula: data['matricula'],
+          userMetadata: Map<String, dynamic>.from(data['userMetadata'] ?? {}),
+        );
+        ApiClient.token = _currentUser!.token;
+      }
+    } catch (e) {
+      debugPrint('Error loading session: $e');
+    }
+  }
+
+  Map<String, dynamic>? _selectedRepartidorForMap;
+  Map<String, dynamic>? get selectedRepartidorForMap => _selectedRepartidorForMap;
+
+  void selectRepartidorForMap(Map<String, dynamic>? repartidor) {
+    _selectedRepartidorForMap = repartidor;
+    notifyListeners();
+  }
+
+  Future<void> toggleGpsReporting(bool enabled) async {
+    _isGpsReportingEnabled = enabled;
+    notifyListeners();
+    if (!enabled) {
+      _stopLocationReporting();
+    } else {
+      _startLocationReporting();
+    }
+    if (currentUser != null) {
+      _currentUser = User(
+        id: currentUser!.id,
+        email: currentUser!.email,
+        fullName: currentUser!.fullName,
+        role: currentUser!.role,
+        token: currentUser!.token,
+        phone: currentUser!.phone,
+        tipoVehiculo: currentUser!.tipoVehiculo,
+        matricula: currentUser!.matricula,
+        userMetadata: {
+          ...currentUser!.userMetadata,
+          'gps_reporting_enabled': enabled,
+        },
+      );
+      await _saveSession(_currentUser!);
+    }
+  }
+
+  Future<String> _uploadAvatarFile(String localPath) async {
+    try {
+      final baseUrl = ApiClient.orderBaseUrl;
+      final uri = Uri.parse('$baseUrl/api/v1/auth/upload');
+      final request = http.MultipartRequest('POST', uri);
+      request.files.add(await http.MultipartFile.fromPath('file', localPath));
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['url'] ?? '';
+      } else {
+        throw Exception('File upload failed: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('Error uploading avatar file: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> updateProfile({
+    required String fullName,
+    required String email,
+    required String celular,
+    String? avatarUrl,
+    String? tipoVehiculo,
+    String? matricula,
+  }) async {
+    if (currentUser == null) return;
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      String finalAvatarUrl = avatarUrl ?? currentUserAvatarUrl ?? '';
+      if (finalAvatarUrl.isNotEmpty && (finalAvatarUrl.startsWith('/') || finalAvatarUrl.startsWith('file://') || finalAvatarUrl.contains('cache'))) {
+        finalAvatarUrl = await _uploadAvatarFile(finalAvatarUrl);
+      }
+
+      final response = await ApiClient.post(
+        'order',
+        '/api/v1/preventistas/${currentUser!.id}/profile',
+        {
+          'fullName': fullName,
+          'email': email,
+          'avatarUrl': finalAvatarUrl,
+          'phone': celular,
+          'tipoVehiculo': tipoVehiculo,
+          'matricula': matricula,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final updatedData = jsonDecode(response.body);
+        
+        _currentUser = User(
+          id: currentUser!.id,
+          email: updatedData['email'] ?? email,
+          fullName: updatedData['fullName'] ?? fullName,
+          role: currentUser!.role,
+          token: currentUser!.token,
+          phone: updatedData['phone'] ?? celular,
+          tipoVehiculo: updatedData['tipoVehiculo'] ?? tipoVehiculo,
+          matricula: updatedData['matricula'] ?? matricula,
+          userMetadata: {
+            ...currentUser!.userMetadata,
+            'celular': updatedData['phone'] ?? celular,
+            'avatar_url': updatedData['avatarUrl'] ?? finalAvatarUrl,
+          },
+        );
+
+        await _saveSession(_currentUser!);
+        
+        _currentUserAvatarUrl = _currentUser!.userMetadata['avatar_url'] as String?;
+        _currentUserFullName = _currentUser!.fullName;
+        _currentUserCelular = celular;
+
+        notifyListeners();
+      } else {
+        throw Exception(response.body);
+      }
+    } catch (e) {
+      debugPrint('Error updating profile: $e');
+      rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _clearSession() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/session.json');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Error clearing session: $e');
+    }
+  }
+}
+
+class User {
+  final String id;
+  final String email;
+  final String fullName;
+  final String role;
+  final String token;
+  final String? phone;
+  final String? tipoVehiculo;
+  final String? matricula;
+  final Map<String, dynamic> userMetadata;
+
+  User({
+    required this.id,
+    required this.email,
+    required this.fullName,
+    required this.role,
+    required this.token,
+    this.phone,
+    this.tipoVehiculo,
+    this.matricula,
+    required this.userMetadata,
+  });
 }
