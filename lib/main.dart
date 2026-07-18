@@ -5,10 +5,12 @@ import 'core/theme/theme.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
+import 'core/network/api_client.dart';
 
 void main() async {
   // Ensure Flutter binding is initialized (needed for native plugins / SQLite)
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiClient.initialize();
   
   runApp(
     ChangeNotifierProvider(

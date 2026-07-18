@@ -450,6 +450,10 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
 
               const SizedBox(height: 24),
 
+              _buildAgendaSection(provider),
+
+              const SizedBox(height: 24),
+
               // SECCIÓN INTERACTIVA INFERIOR CORREGIDA
               if (activeOrder != null) ...[
                 Text(
@@ -820,6 +824,111 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgendaSection(OrderProvider provider) {
+    final agenda = provider.todayAgenda;
+    if (agenda == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: slate200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.calendar_today_outlined, color: Color(0xFF64748B), size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sin Agenda Asignada',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: slate900,
+                    ),
+                  ),
+                  Text(
+                    'No tienes visitas programadas para hoy.',
+                    style: GoogleFonts.openSans(fontSize: 11, color: slate400),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final status = agenda['status'] ?? 'PENDIENTE';
+    final itemsCount = (agenda['items'] as List?)?.length ?? 0;
+    final isPending = status == 'PENDIENTE';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isPending ? const Color(0xFFFFFBEB) : const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isPending ? const Color(0xFFFDE68A) : const Color(0xFFC7D2FE),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isPending ? const Color(0xFFFEF3C7) : const Color(0xFFE0E7FF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isPending ? Icons.notification_important_outlined : Icons.calendar_month_outlined,
+              color: isPending ? const Color(0xFFD97706) : const Color(0xFF4F46E5),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isPending ? 'Nueva Agenda Pendiente' : 'Agenda Activa en Progreso',
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: slate900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isPending
+                      ? 'Se te asignó un recorrido con $itemsCount paradas. Por favor, acéptalo en la pestaña Agendas.'
+                      : 'Tienes un itinerario de $itemsCount visitas hoy. Revisa el avance en la pestaña Agendas.',
+                  style: GoogleFonts.openSans(
+                    fontSize: 11,
+                    color: slate700,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

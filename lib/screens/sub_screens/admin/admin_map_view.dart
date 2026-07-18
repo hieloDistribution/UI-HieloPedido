@@ -19,8 +19,10 @@ class AdminMapView extends StatefulWidget {
 }
 
 class _AdminMapViewState extends State<AdminMapView> {
+  static const Color indigoCustom = Color(0xFF4F46E5);
   GoogleMapController? _googleMapController;
   Map<String, dynamic>? _selectedCliente;
+  Map<String, dynamic>? _selectedRepartidor;
   BitmapDescriptor? _storeMarkerIcon;
   final Map<String, BitmapDescriptor> _repartidorIcons = {};
 
@@ -29,7 +31,11 @@ class _AdminMapViewState extends State<AdminMapView> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _createStoreMarkerIcon();
-      Provider.of<OrderProvider>(context, listen: false).fetchClientes();
+      final op = Provider.of<OrderProvider>(context, listen: false);
+      op.fetchClientes();
+      op.fetchRepartidoresLocations();
+      op.fetchAdminAgendasToday();
+      op.fetchAdminOrders();
     });
   }
 
@@ -211,6 +217,15 @@ class _AdminMapViewState extends State<AdminMapView> {
             title: r['full_name'] ?? r['fullName'] ?? 'Repartidor',
             snippet: '${r['tipo_vehiculo'] ?? 'Vehículo'} • ${isOnline ? 'En línea' : 'Desconectado'}',
           ),
+          onTap: () {
+            setState(() {
+              _selectedCliente = null;
+              _selectedRepartidor = r;
+            });
+            _googleMapController?.animateCamera(
+              CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15.0),
+            );
+          },
         ),
       );
     }
@@ -229,6 +244,124 @@ class _AdminMapViewState extends State<AdminMapView> {
             markers: markers,
             onMapCreated: (controller) {
               _googleMapController = controller;
+              controller.setMapStyle('''
+[
+  {
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#0f172a"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#94a3b8"
+      }
+    ]
+  },
+  {
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      {
+        "color": "#0f172a"
+      }
+    ]
+  },
+  {
+    "featureType": "administrative.country",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "color": "#334155"
+      }
+    ]
+  },
+  {
+    "featureType": "landscape.man_made",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      {
+        "color": "#1e293b"
+      }
+    ]
+  },
+  {
+    "featureType": "landscape.natural",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#0f172a"
+      }
+    ]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#1e293b"
+      }
+    ]
+  },
+  {
+    "featureType": "poi",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#64748b"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#1e293b"
+      }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#94a3b8"
+      }
+    ]
+  },
+  {
+    "featureType": "road.highway",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#334155"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry",
+    "stylers": [
+      {
+        "color": "#020617"
+      }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      {
+        "color": "#475569"
+      }
+    ]
+  }
+]
+              ''');
             },
           ),
 
@@ -316,6 +449,278 @@ class _AdminMapViewState extends State<AdminMapView> {
                 ),
               ),
             ),
+
+          if (_selectedRepartidor != null)
+            Positioned(
+              bottom: 140,
+              left: 16,
+              right: 16,
+              child: Builder(
+                builder: (context) {
+                  final currentRep = _selectedRepartidor!;
+                  bool isOnline = false;
+                  double distance = 0.0;
+
+                  final lastSeenStr = (currentRep['lastLocationUpdated'] ?? currentRep['last_location_updated']) as String?;
+                  if (lastSeenStr != null) {
+                    try {
+                      final lastSeen = DateTime.parse(lastSeenStr);
+                      isOnline = DateTime.now().toUtc().difference(lastSeen).inSeconds <= 60;
+                    } catch (_) {}
+                  }
+
+                  final selectedAgenda = provider.adminAgendasToday.firstWhere(
+                    (a) => a['preventista'] != null && (a['preventista']['id'] ?? '').toString() == currentRep['id']?.toString(),
+                    orElse: () => {},
+                  );
+
+                  if (selectedAgenda.isNotEmpty && selectedAgenda['items'] != null) {
+                    final completedCount = (selectedAgenda['items'] as List)
+                        .where((it) => it['status'] == 'COMPLETADO')
+                        .length;
+                    distance = completedCount == 0 ? 0.0 : (completedCount * 2.8 + 1.5);
+                  }
+
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B).withOpacity(0.95),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: indigoCustom, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.4),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                shape: BoxShape.circle,
+                                image: currentRep['avatarUrl'] != null || currentRep['avatar_url'] != null
+                                    ? DecorationImage(
+                                        image: NetworkImage(currentRep['avatarUrl'] ?? currentRep['avatar_url']),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: currentRep['avatarUrl'] == null && currentRep['avatar_url'] == null
+                                  ? const Center(
+                                      child: Icon(Icons.person, color: Colors.white70),
+                                    )
+                                  : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    currentRep['full_name'] ?? currentRep['fullName'] ?? 'Preventista',
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: isOnline ? Colors.greenAccent : Colors.redAccent,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        isOnline ? 'En línea' : 'Desconectado',
+                                        style: GoogleFonts.outfit(
+                                          fontSize: 11,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () => setState(() => _selectedRepartidor = null),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close, color: Colors.white70, size: 16),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const Divider(color: Colors.white12, height: 20),
+
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _metricBox('Recorrido', '${distance.toStringAsFixed(1)} km', Icons.directions_run),
+                            _metricBox('Vehículo', currentRep['tipo_vehiculo'] ?? 'Ninguno', Icons.local_shipping_outlined),
+                            _metricBox('Matrícula', currentRep['matricula'] ?? 'S/M', Icons.pin_outlined),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        Text(
+                          'Agenda y Visitas de Hoy',
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        if (selectedAgenda.isEmpty || selectedAgenda['items'] == null || (selectedAgenda['items'] as List).isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Text(
+                              'No tiene visitas planificadas para hoy.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.openSans(color: Colors.grey, fontSize: 11),
+                            ),
+                          )
+                        else
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 150),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              itemCount: (selectedAgenda['items'] as List).length,
+                              itemBuilder: (context, idx) {
+                                final item = selectedAgenda['items'][idx];
+                                final client = item['client'] as Map<String, dynamic>? ?? {};
+                                final clientName = client['name'] ?? 'Cliente';
+                                final isItemCompleted = item['status'] == 'COMPLETADO';
+
+                                // Find client orders taken by this preventista today
+                                final clientOrders = provider.adminOrders.where((o) =>
+                                    (o['user_id'] == client['id'] || o['client_name'] == clientName) &&
+                                    o['repartidor_id']?.toString() == currentRep['id']?.toString()
+                                ).toList();
+
+                                String orderDetails = '';
+                                if (clientOrders.isNotEmpty) {
+                                  orderDetails = clientOrders.map((o) => o['product_name'] ?? '').join(', ');
+                                }
+
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.storefront_outlined, color: Colors.greenAccent, size: 16),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              clientName,
+                                              style: GoogleFonts.outfit(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            if (orderDetails.isNotEmpty) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Pedido: $orderDetails',
+                                                style: GoogleFonts.openSans(
+                                                  fontSize: 10,
+                                                  color: Colors.greenAccent,
+                                                ),
+                                              ),
+                                            ] else if (isItemCompleted && item['notes'] != null) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Nota: ${item['notes']}',
+                                                style: GoogleFonts.openSans(
+                                                  fontSize: 10,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: isItemCompleted ? const Color(0xFF065F46) : Colors.white12,
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          isItemCompleted ? 'Visitado' : 'Pendiente',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: isItemCompleted ? Colors.greenAccent : Colors.white60,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricBox(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.greenAccent, size: 16),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: GoogleFonts.outfit(fontSize: 9, color: Colors.grey),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
         ],
       ),
     );

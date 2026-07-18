@@ -24,6 +24,8 @@ class OrderProvider with ChangeNotifier {
   Timer? _locationTimer;
   bool _isGpsReportingEnabled = true;
   bool get isGpsReportingEnabled => _isGpsReportingEnabled;
+  Map<String, dynamic>? _todayAgenda;
+  Map<String, dynamic>? get todayAgenda => _todayAgenda;
 
   final DbHelper _db = DbHelper.instance;
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
@@ -31,6 +33,8 @@ class OrderProvider with ChangeNotifier {
   List<OrderModel> get orders => _orders;
   List<Map<String, dynamic>> get adminOrders => _adminOrders;
   List<Map<String, dynamic>> get repartidores => _repartidores;
+  List<Map<String, dynamic>> _adminAgendasToday = [];
+  List<Map<String, dynamic>> get adminAgendasToday => _adminAgendasToday;
   List<Map<String, dynamic>> get clientes => _clientes;
   List<Map<String, dynamic>> get catalogProducts => _catalogProducts;
   bool get isLoading => _isLoading;
@@ -56,8 +60,13 @@ class OrderProvider with ChangeNotifier {
   String? get businessAddress => _businessAddress;
   String? get currentUserCelular => _currentUserCelular;
 
-  final Set<String> _ratedOrderIds = {};
-  Set<String> get ratedOrderIds => _ratedOrderIds;
+   String? _adminAvatarUrl;
+   String _adminName = 'Administrador de Ventas';
+   String? get adminAvatarUrl => _adminAvatarUrl;
+   String get adminName => _adminName;
+
+   final Set<String> _ratedOrderIds = {};
+   Set<String> get ratedOrderIds => _ratedOrderIds;
 
   Timer? _dispatchCheckTimer;
   Timer? _silentPollTimer;
@@ -107,8 +116,11 @@ class OrderProvider with ChangeNotifier {
       if (_userRole == 'admin') {
         await fetchAdminOrders();
         await fetchRepartidoresLocations();
+        await fetchAdminAgendasToday();
       } else {
         await loadOrders();
+        await fetchTodayAgenda();
+        await fetchAdminProfile();
         _startLocationReporting();
       }
     }
@@ -454,8 +466,10 @@ class OrderProvider with ChangeNotifier {
     _ordersPollTimer = Timer.periodic(const Duration(seconds: 15), (timer) async {
       if (_userRole == 'admin') {
         await fetchAdminOrders();
+        await fetchAdminAgendasToday();
       } else {
         await fetchOrdersFromBackend(silent: true);
+        await fetchTodayAgenda();
       }
     });
   }
@@ -811,10 +825,31 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
-  double getProductWeightKg(String productName) {
+  double getProductWeightKg(String productName, {String? productId}) {
+    if (productId != null && productId.startsWith('[')) {
+      try {
+        final List<dynamic> list = jsonDecode(productId);
+        double totalWeight = 0.0;
+        for (var it in list) {
+          final String name = (it['productName'] ?? '').toString().toLowerCase();
+          final int qty = (it['quantity'] ?? 0) as int;
+          double unitWeight = 10.0;
+          if (name.contains('2kg') || name.contains('2 kg')) unitWeight = 2.0;
+          else if (name.contains('5kg') || name.contains('5 kg')) unitWeight = 5.0;
+          else if (name.contains('10kg') || name.contains('10 kg')) unitWeight = 10.0;
+          else if (name.contains('15kg') || name.contains('15 kg')) unitWeight = 15.0;
+          totalWeight += unitWeight * qty;
+        }
+        // Since we return the total order weight, we divide by quantity (which is 1)
+        return totalWeight;
+      } catch (e) {
+        debugPrint('Error computing multi-item weight: $e');
+      }
+    }
     final name = productName.toLowerCase();
-    if (name.contains('15kg') || name.contains('15 kg')) return 15.0;
+    if (name.contains('2kg') || name.contains('2 kg')) return 2.0;
     if (name.contains('5kg') || name.contains('5 kg')) return 5.0;
+    if (name.contains('15kg') || name.contains('15 kg')) return 15.0;
     return 10.0; // Default to 10kg
   }
 
@@ -832,14 +867,14 @@ class OrderProvider with ChangeNotifier {
   }) async {
     if (currentUser == null) return;
 
-    final double newOrderWeight = getProductWeightKg(productName) * quantity;
+    final double newOrderWeight = getProductWeightKg(productName, productId: productId) * quantity;
 
     if (preferredRepartidorId != null) {
       final today = DateTime.now();
       final startOfDay = DateTime(today.year, today.month, today.day);
       final currentRouteWeight = _orders
           .where((o) => o.repartidorId == preferredRepartidorId && o.createdAt.isAfter(startOfDay))
-          .fold<double>(0.0, (sum, o) => sum + (getProductWeightKg(o.productName) * o.quantity));
+          .fold<double>(0.0, (sum, o) => sum + (getProductWeightKg(o.productName, productId: o.productId) * o.quantity));
 
       if (currentRouteWeight + newOrderWeight > 5000.0) {
         throw Exception("El preventista seleccionado no tiene capacidad en su ruta de hoy. Capacidad disponible: ${(5000.0 - currentRouteWeight).toStringAsFixed(1)} kg.");
@@ -891,13 +926,13 @@ class OrderProvider with ChangeNotifier {
   }) async {
     if (currentUser == null) return;
 
-    final double newOrderWeight = getProductWeightKg(productName) * quantity;
+    final double newOrderWeight = getProductWeightKg(productName, productId: productId) * quantity;
 
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
     final currentRouteWeight = _orders
         .where((o) => o.repartidorId == currentUser!.id && o.createdAt.isAfter(startOfDay))
-        .fold<double>(0.0, (sum, o) => sum + (getProductWeightKg(o.productName) * o.quantity));
+        .fold<double>(0.0, (sum, o) => sum + (getProductWeightKg(o.productName, productId: o.productId) * o.quantity));
 
     if (currentRouteWeight + newOrderWeight > 5000.0) {
       throw Exception("Supera la capacidad máxima de tu ruta de preventa para hoy (5000 kg). Capacidad disponible: ${(5000.0 - currentRouteWeight).toStringAsFixed(1)} kg.");
@@ -942,13 +977,13 @@ class OrderProvider with ChangeNotifier {
     if (index == -1) return false;
 
     final order = _orders[index];
-    final double orderWeight = getProductWeightKg(order.productName) * order.quantity;
+    final double orderWeight = getProductWeightKg(order.productName, productId: order.productId) * order.quantity;
 
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
     final currentRouteWeight = _orders
         .where((o) => o.repartidorId == currentUser!.id && o.createdAt.isAfter(startOfDay))
-        .fold<double>(0.0, (sum, o) => sum + (getProductWeightKg(o.productName) * o.quantity));
+        .fold<double>(0.0, (sum, o) => sum + (getProductWeightKg(o.productName, productId: o.productId) * o.quantity));
 
     if (currentRouteWeight + orderWeight > 5000.0) {
       throw Exception("No puedes aceptar este pedido. Supera tu capacidad máxima de ruta diaria de 5000 kg. Capacidad disponible: ${(5000.0 - currentRouteWeight).toStringAsFixed(1)} kg.");
@@ -1174,13 +1209,17 @@ class OrderProvider with ChangeNotifier {
         if (processedIds.isNotEmpty) {
           final List<String> successfullySyncedMutationIds = List<String>.from(processedIds);
           final List<String> successfullySyncedOrderIds = pendingMutations
-              .where((m) => successfullySyncedMutationIds.contains(m['id']))
+              .where((m) =>
+                  successfullySyncedMutationIds.contains(m['id']) &&
+                  (m['entity_type'] ?? 'ORDER').toUpperCase() == 'ORDER')
               .map((m) => m['entity_id'] as String)
               .toList();
 
           await _db.deleteMutations(successfullySyncedMutationIds);
-          await _db.markOrdersAsSynced(successfullySyncedOrderIds);
-          await loadOrders();
+          if (successfullySyncedOrderIds.isNotEmpty) {
+            await _db.markOrdersAsSynced(successfullySyncedOrderIds);
+            await loadOrders();
+          }
 
           if (_userRole == 'admin') {
             await fetchAdminOrders();
@@ -1296,9 +1335,9 @@ class OrderProvider with ChangeNotifier {
             'direccion': c['address'],
             'latitud_comercial': c['latitude'],
             'longitud_comercial': c['longitude'],
-            'celular': '',
-            'ruc_dni': c['tax_id'],
-            'full_name': c['owner_name'] ?? c['name'],
+            'celular': c['phone'] ?? '',
+            'ruc_dni': c['taxId'] ?? c['tax_id'] ?? '',
+            'full_name': c['ownerName'] ?? c['owner_name'] ?? c['name'],
           };
         }).toList();
 
@@ -1486,6 +1525,192 @@ class OrderProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> fetchAdminProfile() async {
+    try {
+      final response = await ApiClient.get('order', '/api/v1/preventistas/admin');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        _adminName = data['fullName'] ?? 'Administrador de Ventas';
+        _adminAvatarUrl = data['avatarUrl'];
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching admin profile from backend: $e');
+    }
+  }
+
+  Future<void> fetchAdminAgendasToday() async {
+    if (currentUser == null || !_isOnline) return;
+    try {
+      final response = await ApiClient.get('order', '/api/v1/agendas/today');
+      if (response.statusCode == 200) {
+        _adminAgendasToday = List<Map<String, dynamic>>.from(jsonDecode(response.body));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching admin agendas today: $e');
+    }
+  }
+
+  Future<void> fetchTodayAgenda() async {
+    if (currentUser == null) return;
+    if (_isOnline) {
+      try {
+        final response = await ApiClient.get('order', '/api/v1/agendas/preventista/${currentUser!.id}/today');
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          _todayAgenda = data;
+          await _saveLocalAgenda(data);
+        } else if (response.statusCode == 204) {
+          _todayAgenda = null;
+          await _clearLocalAgenda();
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error fetching today agenda: $e');
+        _todayAgenda = await _loadLocalAgenda();
+        notifyListeners();
+      }
+    } else {
+      _todayAgenda = await _loadLocalAgenda();
+      notifyListeners();
+    }
+  }
+
+  Future<void> acceptAgenda(String agendaId) async {
+    if (currentUser == null) return;
+
+    if (_todayAgenda != null && _todayAgenda!['id'] == agendaId) {
+      _todayAgenda!['status'] = 'ACEPTADA';
+      await _saveLocalAgenda(_todayAgenda!);
+      notifyListeners();
+    }
+
+    if (_isOnline) {
+      try {
+        await ApiClient.post('order', '/api/v1/agendas/$agendaId/status', {'status': 'ACEPTADA'});
+      } catch (e) {
+        debugPrint('Error sending accept status to server, queueing mutation: $e');
+        await _queueAgendaMutation(agendaId, 'UPDATE', '{"status": "ACEPTADA"}');
+      }
+    } else {
+      await _queueAgendaMutation(agendaId, 'UPDATE', '{"status": "ACEPTADA"}');
+    }
+  }
+
+  Future<void> completeAgendaItem(String itemId, String notes) async {
+    if (_todayAgenda != null && _todayAgenda!['items'] != null) {
+      final items = List<Map<String, dynamic>>.from(_todayAgenda!['items']);
+      final idx = items.indexWhere((i) => i['id'] == itemId);
+      if (idx != -1) {
+        items[idx]['status'] = 'COMPLETADO';
+        items[idx]['notes'] = notes;
+        items[idx]['completedAt'] = DateTime.now().toUtc().toIso8601String();
+        _todayAgenda!['items'] = items;
+
+        final allCompleted = items.every((i) => i['status'] == 'COMPLETADO');
+        if (allCompleted) {
+          _todayAgenda!['status'] = 'COMPLETADA';
+        }
+        await _saveLocalAgenda(_todayAgenda!);
+        notifyListeners();
+      }
+    }
+
+    if (_isOnline) {
+      try {
+        await ApiClient.post('order', '/api/v1/agendas/items/$itemId/complete', {'notes': notes});
+      } catch (e) {
+        debugPrint('Error sending complete item status to server, queueing mutation: $e');
+        await _queueAgendaItemMutation(itemId, 'UPDATE', jsonEncode({'status': 'COMPLETADO', 'notes': notes}));
+      }
+    } else {
+      await _queueAgendaItemMutation(itemId, 'UPDATE', jsonEncode({'status': 'COMPLETADO', 'notes': notes}));
+    }
+  }
+
+  Future<bool> assignAgenda({
+    required String preventistaId,
+    required DateTime date,
+    required List<String> clientIds,
+  }) async {
+    if (currentUser == null || !_isOnline) return false;
+    try {
+      final formattedDate = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+      final response = await ApiClient.post('order', '/api/v1/agendas', {
+        'preventistaId': preventistaId,
+        'date': formattedDate,
+        'clientIds': clientIds,
+      });
+      return response.statusCode == 201;
+    } catch (e) {
+      debugPrint('Error assigning agenda: $e');
+      return false;
+    }
+  }
+
+  Future<void> _queueAgendaMutation(String agendaId, String operation, String payload) async {
+    final mutationId = generateUuid();
+    await _db.insertMutation(
+      id: mutationId,
+      entityType: 'AGENDA',
+      entityId: agendaId,
+      operation: operation,
+      payload: payload,
+    );
+    _pendingSyncCount = (await _db.getPendingMutations()).length;
+    notifyListeners();
+  }
+
+  Future<void> _queueAgendaItemMutation(String itemId, String operation, String payload) async {
+    final mutationId = generateUuid();
+    await _db.insertMutation(
+      id: mutationId,
+      entityType: 'AGENDA_ITEM',
+      entityId: itemId,
+      operation: operation,
+      payload: payload,
+    );
+    _pendingSyncCount = (await _db.getPendingMutations()).length;
+    notifyListeners();
+  }
+
+  Future<void> _saveLocalAgenda(Map<String, dynamic> agenda) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/today_agenda.json');
+      await file.writeAsString(jsonEncode(agenda));
+    } catch (e) {
+      debugPrint('Error saving local agenda: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> _loadLocalAgenda() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/today_agenda.json');
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        return jsonDecode(content) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('Error loading local agenda: $e');
+    }
+    return null;
+  }
+
+  Future<void> _clearLocalAgenda() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/today_agenda.json');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Error clearing local agenda: $e');
     }
   }
 

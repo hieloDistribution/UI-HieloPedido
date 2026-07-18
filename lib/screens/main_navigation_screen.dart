@@ -10,6 +10,7 @@ import 'sub_screens/repartidor/repartidor_inicio_view.dart';
 import 'sub_screens/repartidor/create_order_view.dart';
 import 'sub_screens/shared/profile_section.dart';
 import 'sub_screens/repartidor/distributor_orders_dashboard.dart';
+import 'sub_screens/repartidor/repartidor_agenda_view.dart';
 import 'sub_screens/repartidor/incoming_order_overlay.dart';
 
 class BottomNavItem {
@@ -82,7 +83,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           ]
         : [
             const RepartidorInicioView(),
-            DistributorOrdersDashboard(),
+            const RepartidorAgendaView(),
             const CreateOrderView(),
             const ProfileSection(),
           ];
@@ -120,7 +121,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           ]
         : [
             BottomNavItem(icon: Icons.home_outlined, label: 'Inicio'),
-            BottomNavItem(icon: Icons.local_shipping_outlined, label: 'Viajes'),
+            BottomNavItem(icon: Icons.calendar_month_outlined, label: 'Agendas'),
             BottomNavItem(icon: Icons.add_circle_outline, label: 'Nuevo'),
             BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
           ];

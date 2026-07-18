@@ -4,6 +4,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/order_provider.dart';
 import '../shared/widgets/build_avatar_helper.dart';
+import 'admin_assign_agenda_view.dart';
 
 class AdminProveedoresView extends StatefulWidget {
   final Function(int)? onViewOnMap;
@@ -245,6 +246,26 @@ class _AdminProveedoresViewState extends State<AdminProveedoresView> {
                                   ],
                                 ),
                               ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Material(
+                            color: const Color(0xFFE0E7FF),
+                            borderRadius: BorderRadius.circular(12),
+                            child: IconButton(
+                              icon: const HugeIcon(
+                                icon: HugeIcons.strokeRoundedCalendar04,
+                                color: Color(0xFF4F46E5),
+                                size: 18,
+                              ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => AdminAssignAgendaView(preventista: rep),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 8),
