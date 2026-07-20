@@ -24,14 +24,20 @@ class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<MainNavigationScreen> createState() => MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen>
+class MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
   List<Widget>? _screens;
   String? _cachedRole;
+
+  void switchTab(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+  }
 
   // COLORES EXACTOS
   static const Color navBarColor = Color(0xFF26323F);
@@ -130,139 +136,155 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _currentIndex = 0;
     }
 
-    return Scaffold(
-      extendBody: true, // Permite que el contenido fluya debajo del navbar
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          // 1. EL CONTENIDO PRINCIPAL (MAPA, LISTAS, ETC)
-          Positioned.fill(
-            child: IndexedStack(index: _currentIndex, children: screens),
-          ),
+    final bool hideNavbar = userRole != 'admin' && _currentIndex == 2;
 
-          // 2. NAVBAR FLOTANTE
-          Positioned(
-            bottom: 45,
-            left: 20,
-            right: 20,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                const double hPadding = 24.0;
-                final double availableWidth =
-                    constraints.maxWidth - (hPadding * 2);
-                final double itemWidth = availableWidth / navItems.length;
+    return PopScope(
+      canPop: _currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_currentIndex != 0) {
+          setState(() {
+            _currentIndex = 0;
+          });
+        }
+      },
+      child: Scaffold(
+        extendBody: true,
+        backgroundColor: Colors.white,
+        body: Stack(
+          children: [
+            // 1. EL CONTENIDO PRINCIPAL (MAPA, LISTAS, ETC)
+            Positioned.fill(
+              child: IndexedStack(index: _currentIndex, children: screens),
+            ),
 
-                final double targetX =
-                    hPadding + (_currentIndex * itemWidth) + (itemWidth / 2);
+            // 2. NAVBAR FLOTANTE (Se oculta durante el formulario de Checkout/Registrar Pedido)
+            if (!hideNavbar)
+              Positioned(
+                bottom: 45,
+                left: 20,
+                right: 20,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const double hPadding = 24.0;
+                    final double availableWidth =
+                        constraints.maxWidth - (hPadding * 2);
+                    final double itemWidth = availableWidth / navItems.length;
 
-                return TweenAnimationBuilder<double>(
-                  tween: Tween(end: targetX),
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, currentX, child) {
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        // LA BARRA CON EL CORTE (más sutil que antes)
-                        CustomPaint(
-                          size: Size(constraints.maxWidth, 68),
-                          painter: NotchPainter(
-                            notchX: currentX,
-                            color: navBarColor,
-                            cutRadius: notchCutRadius,
-                          ),
-                        ),
+                    final double targetX =
+                        hPadding + (_currentIndex * itemWidth) + (itemWidth / 2);
 
-                        // LA BURBUJA BLANCA FLOTANTE (más chica, menos "peso" visual)
-                        Positioned(
-                          top: -bubbleSize / 5,
-                          left: currentX - (bubbleSize / 2),
-                          child: Container(
-                            width: bubbleSize,
-                            height: bubbleSize,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.12),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
+                    return TweenAnimationBuilder<double>(
+                      tween: Tween(end: targetX),
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, currentX, child) {
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            // LA BARRA CON EL CORTE (más sutil que antes)
+                            CustomPaint(
+                              size: Size(constraints.maxWidth, 68),
+                              painter: NotchPainter(
+                                notchX: currentX,
+                                color: navBarColor,
+                                cutRadius: notchCutRadius,
+                              ),
+                            ),
+
+                            // LA BURBUJA BLANCA FLOTANTE (más chica, menos "peso" visual)
+                            Positioned(
+                              top: -bubbleSize / 5,
+                              left: currentX - (bubbleSize / 2),
+                              child: Container(
+                                width: bubbleSize,
+                                height: bubbleSize,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.12),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                            child: Center(
-                              child: navItems[_currentIndex].hugeIcon != null
-                                  ? HugeIcon(
-                                      icon: navItems[_currentIndex].hugeIcon!,
-                                      color: navBarColor,
-                                      size: activeIconSize,
-                                    )
-                                  : Icon(
-                                      navItems[_currentIndex].icon,
-                                      color: navBarColor,
-                                      size: activeIconSize,
-                                    ),
-                            ),
-                          ),
-                        ),
-
-                        // ICONOS INACTIVOS Y ZONA TÁCTIL
-                        SizedBox(
-                          height: 68,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: hPadding,
-                            ),
-                            child: Row(
-                              children: List.generate(navItems.length, (index) {
-                                final item = navItems[index];
-                                final isSelected = _currentIndex == index;
-
-                                return GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () =>
-                                      setState(() => _currentIndex = index),
-                                  child: SizedBox(
-                                    width: itemWidth,
-                                    child: Center(
-                                      child: AnimatedOpacity(
-                                        duration: const Duration(
-                                          milliseconds: 200,
+                                child: Center(
+                                  child: navItems[_currentIndex].hugeIcon != null
+                                      ? HugeIcon(
+                                          icon: navItems[_currentIndex].hugeIcon!,
+                                          color: navBarColor,
+                                          size: activeIconSize,
+                                        )
+                                      : Icon(
+                                          navItems[_currentIndex].icon,
+                                          color: navBarColor,
+                                          size: activeIconSize,
                                         ),
-                                        opacity: isSelected ? 0.0 : 1.0,
-                                        child: item.hugeIcon != null
-                                            ? HugeIcon(
-                                                icon: item.hugeIcon!,
-                                                color: inactiveIconColor,
-                                                size: inactiveIconSize,
-                                              )
-                                            : Icon(
-                                                item.icon,
-                                                color: inactiveIconColor,
-                                                size: inactiveIconSize,
-                                              ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      ],
+
+                            // ICONOS INACTIVOS Y ZONA TÁCTIL
+                            SizedBox(
+                              height: 68,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: hPadding,
+                                ),
+                                child: Row(
+                                  children: List.generate(navItems.length, (index) {
+                                    final item = navItems[index];
+                                    final isSelected = _currentIndex == index;
+
+                                    return Expanded(
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: () {
+                                          setState(() {
+                                            _currentIndex = index;
+                                          });
+                                        },
+                                        child: Center(
+                                          child: AnimatedOpacity(
+                                            duration: const Duration(
+                                              milliseconds: 200,
+                                            ),
+                                            opacity: isSelected ? 0.0 : 1.0,
+                                            child: item.hugeIcon != null
+                                                ? HugeIcon(
+                                                    icon: item.hugeIcon!,
+                                                    color: inactiveIconColor,
+                                                    size: inactiveIconSize,
+                                                  )
+                                                : Icon(
+                                                    item.icon,
+                                                    color: inactiveIconColor,
+                                                    size: inactiveIconSize,
+                                                  ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-          ),
+                ),
+              ),
 
-          if (provider.incomingOrderAlert != null)
-            Positioned.fill(
-              child: IncomingOrderOverlay(order: provider.incomingOrderAlert!),
-            ),
-        ],
+            if (provider.incomingOrderAlert != null)
+              Positioned.fill(
+                child: IncomingOrderOverlay(order: provider.incomingOrderAlert!),
+              ),
+          ],
+        ),
       ),
     );
   }

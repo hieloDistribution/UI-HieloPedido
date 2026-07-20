@@ -11,8 +11,8 @@ class ApiClient {
   // IP local de la computadora (Wi-Fi) para que funcione en dispositivos físicos reales y emuladores
   static String _host = '192.168.1.2';
 
-  static String get syncBaseUrl => 'http://$_host:8080';
-  static String get orderBaseUrl => 'http://$_host:8080';
+  static String get syncBaseUrl => 'http://$_host:8081';
+  static String get orderBaseUrl => 'http://$_host:8082';
 
   static Future<void> initialize() async {
     if (kIsWeb) {

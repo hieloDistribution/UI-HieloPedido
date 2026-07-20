@@ -301,21 +301,16 @@ class _ProfileSectionState extends State<ProfileSection> {
                   ),
                   child: Column(
                     children: [
-                      // Name Row (editable only in form)
+                      // Phone Row
                       if (_isEditing)
                         _buildEditableRow(
                           icon: HugeIcons.strokeRoundedUser,
                           label: 'Nombre y Apellido',
                           controller: _nameController,
                           validator: (val) => val == null || val.trim().isEmpty ? 'El nombre es obligatorio' : null,
-                        )
-                      else
-                        _buildInfoRow(
-                          icon: HugeIcons.strokeRoundedUser,
-                          label: 'Nombre y Apellido',
-                          value: provider.currentUserFullName ?? 'No especificado',
                         ),
-                      const Divider(height: 1, color: slate100, indent: 60),
+                      if (_isEditing)
+                        const Divider(height: 1, color: slate100, indent: 60),
 
                       // Phone Row
                       if (_isEditing)
@@ -487,11 +482,6 @@ class _ProfileSectionState extends State<ProfileSection> {
                 ),
               ],
             ),
-          ),
-          const Icon(
-            Icons.arrow_forward_ios,
-            color: slate400,
-            size: 14,
           ),
         ],
       ),

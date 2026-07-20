@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 import '../../../providers/order_provider.dart';
+import '../../main_navigation_screen.dart';
 import '../shared/widgets/success_overlay_dialog.dart';
 
 class CreateOrderView extends StatefulWidget {
@@ -73,6 +74,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
 
     Future.microtask(() async {
       final provider = Provider.of<OrderProvider>(context, listen: false);
+      await provider.fetchProducts();
       await provider.fetchClienteShops();
       if (widget.prefilledClientId != null) {
         final match = provider.clienteShops.firstWhere(
@@ -100,16 +102,111 @@ class _CreateOrderViewState extends State<CreateOrderView> {
     super.dispose();
   }
 
-  double get _totalAmount {
+  List<Map<String, dynamic>> _getActiveCatalog(OrderProvider provider) {
+    if (provider.products.isNotEmpty) {
+      return provider.products.map((p) {
+        final double priceVal = (p['price'] is num)
+            ? (p['price'] as num).toDouble()
+            : (double.tryParse(p['price'].toString()) ?? 0.0);
+        final double weightVal = ((p['weightKg'] ?? p['weight_kg']) is num)
+            ? ((p['weightKg'] ?? p['weight_kg']) as num).toDouble()
+            : 5.0;
+        return {
+          'id': p['id'].toString(),
+          'name': p['name'].toString(),
+          'price': priceVal,
+          'stock': p['stock'] ?? 999,
+          'weightKg': weightVal,
+          'image': 'assets/hielo.png',
+          'description': p['name'].toString().contains('Cubos')
+              ? 'Cilindros compactos de agua purificada por ósmosis inversa.'
+              : 'Formato comercial de alta duración.',
+        };
+      }).toList();
+    }
+    return _catalog;
+  }
+
+  double _getTotalAmount(OrderProvider provider) {
     double total = 0.0;
-    for (var prod in _catalog) {
+    final activeCatalog = _getActiveCatalog(provider);
+    for (var prod in activeCatalog) {
       final qty = _selectedQuantities[prod['id']] ?? 0;
       total += (prod['price'] as double) * qty;
     }
     return total;
   }
 
+  double _getTotalWeightKg(OrderProvider provider) {
+    double totalWeight = 0.0;
+    final activeCatalog = _getActiveCatalog(provider);
+    for (var prod in activeCatalog) {
+      final qty = _selectedQuantities[prod['id']] ?? 0;
+      final weight = (prod['weightKg'] as double? ?? 5.0);
+      totalWeight += weight * qty;
+    }
+    return totalWeight;
+  }
+
+  void _showDirectQuantityDialog(Map<String, dynamic> prod, int currentQty) {
+    final controller = TextEditingController(text: currentQty > 0 ? '$currentQty' : '');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Ingresar Cantidad',
+          style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              prod['name'],
+              style: GoogleFonts.outfit(fontSize: 14, color: slate700),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Cantidad de bolsas',
+                hintText: 'Ej: 50',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancelar', style: GoogleFonts.outfit(color: slate400)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newQty = int.tryParse(controller.text.trim()) ?? 0;
+              setState(() {
+                _selectedQuantities[prod['id']] = newQty >= 0 ? newQty : 0;
+              });
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('Guardar', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _submit() {
+    final provider = Provider.of<OrderProvider>(context, listen: false);
+    final activeCatalog = _getActiveCatalog(provider);
+
     if (_selectedShop == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -121,7 +218,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
     }
 
     final List<Map<String, dynamic>> selectedItems = [];
-    for (var prod in _catalog) {
+    for (var prod in activeCatalog) {
       final qty = _selectedQuantities[prod['id']] ?? 0;
       if (qty > 0) {
         selectedItems.add({
@@ -143,7 +240,27 @@ class _CreateOrderViewState extends State<CreateOrderView> {
       return;
     }
 
-    final provider = Provider.of<OrderProvider>(context, listen: false);
+    final totalWeight = _getTotalWeightKg(provider);
+    if (totalWeight < OrderProvider.kMinOrderWeightKg) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('El pedido mínimo debe sumar al menos ${OrderProvider.kMinOrderWeightKg.toInt()} kg. (Actual: ${totalWeight.toStringAsFixed(1)} kg)'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (totalWeight > OrderProvider.kMaxRouteWeightKg) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('El pedido excede el límite de capacidad de ruta de ${OrderProvider.kMaxRouteWeightKg.toInt()} kg. (Actual: ${totalWeight.toStringAsFixed(1)} kg)'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     final shopName = _selectedShop!['nombre_comercial'] ?? 'Cliente';
 
     // Resumen amigable del producto
@@ -157,7 +274,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
         jsonEncode(selectedItems), // Guardamos el JSON de los hielos en productId
         productNameSummary,
         1, // Cantidad base 1, el detalle va en la lista interna
-        _totalAmount,
+        _getTotalAmount(provider),
         deliveryLatitude: _selectedShop!['latitud_comercial'],
         deliveryLongitude: _selectedShop!['longitud_comercial'],
         deliveryAddress: _selectedShop!['direccion'],
@@ -186,6 +303,15 @@ class _CreateOrderViewState extends State<CreateOrderView> {
           _selectedQuantities[prod['id']] = 0;
         }
       });
+
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      } else {
+        final mainState = context.findAncestorStateOfType<MainNavigationScreenState>();
+        if (mainState != null) {
+          mainState.switchTab(0);
+        }
+      }
     } catch (e) {
       showPremiumErrorDialog(
         context,
@@ -198,6 +324,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
+    final activeCatalog = _getActiveCatalog(provider);
 
     // Filtrar clientes
     final filteredShops = provider.clienteShops.where((shop) {
@@ -209,6 +336,19 @@ class _CreateOrderViewState extends State<CreateOrderView> {
     return Scaffold(
       backgroundColor: slate50,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: slate900, size: 20),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              final mainState = context.findAncestorStateOfType<MainNavigationScreenState>();
+              if (mainState != null) {
+                mainState.switchTab(0);
+              }
+            }
+          },
+        ),
         title: Text(
           'Registrar Pedido',
           style: GoogleFonts.outfit(
@@ -219,7 +359,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
         ),
         backgroundColor: Colors.white,
         elevation: 0,
-        iconTheme: IconThemeData(color: slate900),
+        iconTheme: const IconThemeData(color: slate900),
       ),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
@@ -341,57 +481,56 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                           ),
                         ),
                       ),
-                      if (_searchQuery.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          constraints: const BoxConstraints(maxHeight: 200),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: slate200),
-                          ),
-                          child: filteredShops.isEmpty
-                              ? Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Text(
-                                    'Ningún cliente coincide con la búsqueda.',
-                                    textAlign: TextAlign.center,
-                                    style: GoogleFonts.openSans(color: slate400, fontSize: 13),
-                                  ),
-                                )
-                              : ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: filteredShops.length,
-                                  itemBuilder: (context, index) {
-                                    final shop = filteredShops[index];
-                                    final bName = shop['nombre_comercial'] ?? 'Sin negocio';
-                                    final oName = shop['full_name'] ?? 'Propietario';
-                                    return ListTile(
-                                      leading: const HugeIcon(
-                                        icon: HugeIcons.strokeRoundedStore03,
-                                        color: slate400,
-                                        size: 20,
-                                      ),
-                                      title: Text(
-                                        bName,
-                                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14, color: slate900),
-                                      ),
-                                      subtitle: Text(
-                                        'Dueño: $oName',
-                                        style: GoogleFonts.openSans(fontSize: 12, color: slate700),
-                                      ),
-                                      onTap: () {
-                                        setState(() {
-                                          _selectedShop = shop;
-                                          _searchController.clear();
-                                          _searchQuery = '';
-                                        });
-                                      },
-                                    );
-                                  },
-                                ),
+                      const SizedBox(height: 8),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: slate200),
                         ),
-                      ],
+                        child: filteredShops.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Text(
+                                  'Ningún cliente coincide con la búsqueda.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.openSans(color: slate400, fontSize: 13),
+                                ),
+                              )
+                            : ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: filteredShops.length,
+                                itemBuilder: (context, index) {
+                                  final shop = filteredShops[index];
+                                  final bName = shop['nombre_comercial'] ?? 'Sin negocio';
+                                  final oName = shop['full_name'] ?? 'Propietario';
+                                  final address = shop['direccion'] ?? '';
+                                  return ListTile(
+                                    leading: const HugeIcon(
+                                      icon: HugeIcons.strokeRoundedStore03,
+                                      color: indigoCustom,
+                                      size: 20,
+                                    ),
+                                    title: Text(
+                                      bName,
+                                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14, color: slate900),
+                                    ),
+                                    subtitle: Text(
+                                      'Dueño: $oName • $address',
+                                      style: GoogleFonts.openSans(fontSize: 12, color: slate700),
+                                    ),
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedShop = shop;
+                                        _searchController.clear();
+                                        _searchQuery = '';
+                                      });
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
                     ],
 
                     const SizedBox(height: 24),
@@ -409,9 +548,9 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                     ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _catalog.length,
+                      itemCount: activeCatalog.length,
                       itemBuilder: (context, index) {
-                        final prod = _catalog[index];
+                        final prod = activeCatalog[index];
                         final String pId = prod['id'] as String;
                         final int qty = _selectedQuantities[pId] ?? 0;
                         final bool isSelected = qty > 0;
@@ -527,7 +666,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                                                 GestureDetector(
                                                   onTap: () {
                                                     setState(() {
-                                                      _selectedQuantities[pId] = qty - 1;
+                                                      _selectedQuantities[pId] = qty > 0 ? qty - 1 : 0;
                                                     });
                                                   },
                                                   child: Container(
@@ -539,14 +678,22 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                                                     child: const Icon(Icons.remove, size: 14, color: slate700),
                                                   ),
                                                 ),
-                                                Padding(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                                                  child: Text(
-                                                    '$qty',
-                                                    style: GoogleFonts.outfit(
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 14,
-                                                      color: slate900,
+                                                GestureDetector(
+                                                  onTap: () => _showDirectQuantityDialog(prod, qty),
+                                                  child: Container(
+                                                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: slate100,
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                    child: Text(
+                                                      '$qty',
+                                                      style: GoogleFonts.outfit(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 14,
+                                                        color: slate900,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
@@ -572,7 +719,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                                             crossAxisAlignment: CrossAxisAlignment.end,
                                             children: [
                                               Text(
-                                                'Precio: \$${prod['price'].toStringAsFixed(2)}',
+                                                'Precio: \$${(prod['price'] as double).toStringAsFixed(2)}',
                                                 style: GoogleFonts.openSans(
                                                   fontSize: 10,
                                                   color: slate400,
@@ -600,15 +747,28 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                         );
                       },
                     ),
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
-            // --- SECCIÓN INFERIOR: MONTO TOTAL FIJO (Solo lectura) Y REGISTRO ---
+            // --- SECCIÓN INFERIOR: MONTO TOTAL FIJO Y REGISTRO (Estilo Checkout Profesional Snoonu / Rappi) ---
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 16,
+                bottom: MediaQuery.of(context).padding.bottom + 16,
+              ),
               decoration: const BoxDecoration(
                 color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 10,
+                    offset: Offset(0, -2),
+                  ),
+                ],
                 border: Border(
                   top: BorderSide(color: slate200),
                 ),
@@ -620,16 +780,31 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Monto Total Pactado:',
-                        style: GoogleFonts.outfit(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: slate700,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Monto Total Pactado:',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: slate700,
+                            ),
+                          ),
+                          Text(
+                            'Peso Total: ${_getTotalWeightKg(provider).toStringAsFixed(1)} kg',
+                            style: GoogleFonts.openSans(
+                              fontSize: 11,
+                              color: _getTotalWeightKg(provider) < OrderProvider.kMinOrderWeightKg
+                                  ? Colors.orange.shade800
+                                  : (_getTotalWeightKg(provider) > OrderProvider.kMaxRouteWeightKg ? Colors.red : Colors.green.shade700),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                       Text(
-                        '\$${_totalAmount.toStringAsFixed(2)}',
+                        '\$${_getTotalAmount(provider).toStringAsFixed(2)}',
                         style: GoogleFonts.outfit(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -638,7 +813,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   SizedBox(
                     height: 48,
                     child: ElevatedButton(

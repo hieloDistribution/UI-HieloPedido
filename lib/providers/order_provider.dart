@@ -11,7 +11,12 @@ import '../core/database/db_helper.dart';
 import '../core/network/api_client.dart';
 import '../models/order_model.dart';
 
+const double kMinOrderWeightKg = 100.0;
+const double kMaxRouteWeightKg = 5000.0;
+
 class OrderProvider with ChangeNotifier {
+  static const double kMinOrderWeightKg = 100.0;
+  static const double kMaxRouteWeightKg = 5000.0;
   List<OrderModel> _orders = [];
   List<Map<String, dynamic>> _adminOrders = [];
   List<Map<String, dynamic>> _repartidores = [];
@@ -112,6 +117,13 @@ class OrderProvider with ChangeNotifier {
     await _checkInitialConnection();
     _startConnectivityListener();
     await _loadSession();
+
+    try {
+      _pendingSyncCount = (await _db.getPendingMutations()).length;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading pending mutations count on init: $e');
+    }
 
     if (currentUser != null) {
       await refreshUserRole();
@@ -220,9 +232,11 @@ class OrderProvider with ChangeNotifier {
   Future<void> refreshUserRole() async {
     if (currentUser == null) return;
     try {
-      final r = currentUser!.role;
+      final r = currentUser!.role.toLowerCase();
       if (r == 'admin') {
         _userRole = 'admin';
+      } else if (r == 'vendedor') {
+        _userRole = 'vendedor';
       } else {
         _userRole = 'repartidor';
       }
@@ -314,12 +328,28 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
+  List<Map<String, dynamic>> _products = [];
+  List<Map<String, dynamic>> get products => _products;
+
+  Future<void> fetchProducts() async {
+    try {
+      final response = await ApiClient.get('order', '/api/v1/products');
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        _products = data.map((item) => Map<String, dynamic>.from(item)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching products from database: $e');
+    }
+  }
+
   Future<void> loginWithEmail(String email, String password) async {
     _isLoading = true;
     notifyListeners();
     try {
       final response = await ApiClient.post(
-        'order',
+        'sync',
         '/api/v1/auth/login',
         {
           'email': email,
@@ -328,10 +358,10 @@ class OrderProvider with ChangeNotifier {
       );
 
       if (response.statusCode != 200) {
-        String errMsg = 'Error de inicio de sesión';
+        String errMsg = 'El correo o la contraseña son incorrectos. Por favor, verifica tus datos.';
         try {
           final errBody = jsonDecode(response.body);
-          if (errBody['message'] != null) {
+          if (errBody['message'] != null && errBody['message'].toString().isNotEmpty) {
             errMsg = errBody['message'];
           }
         } catch (_) {}
@@ -339,30 +369,39 @@ class OrderProvider with ChangeNotifier {
       }
 
       final data = jsonDecode(response.body);
-      final String token = data['token'];
-      final String id = data['userId'] ?? data['id'] ?? '';
-      final String emailRes = data['email'];
-      final String fullName = data['fullName'] ?? '';
-      final String role = data['role'] ?? 'PREVENTISTA';
-      final String? phone = data['phone'];
+      final String token = (data['accessToken'] ?? data['access_token'] ?? data['token'] ?? '').toString();
+      final String? refreshToken = (data['refreshToken'] ?? data['refresh_token'])?.toString();
+      final claims = _parseJwt(token);
+
+      final String id = claims['sub'] ?? claims['user_id'] ?? data['userId'] ?? data['id'] ?? '';
+      final String emailRes = claims['email'] ?? data['email'] ?? email;
+      final String rawRole = (claims['role'] ?? data['role'] ?? 'REPARTIDOR').toString().toLowerCase();
+      if (rawRole == 'cliente') {
+        throw Exception('El correo o la contraseña son incorrectos. Por favor, verifica tus datos.');
+      }
+      final String role = rawRole == 'admin' ? 'admin' : (rawRole == 'vendedor' ? 'vendedor' : 'repartidor');
+      final String fullName = claims['full_name'] ?? data['fullName'] ?? (emailRes.contains('@') ? emailRes.split('@').first : emailRes);
+      final String? phone = claims['phone'] ?? data['phone'];
       final String? tipoVehiculo = data['tipoVehiculo'];
       final String? matricula = data['matricula'];
       final String? avatarUrl = data['avatarUrl'] ?? data['avatar_url'];
 
       ApiClient.token = token;
+      _userRole = role;
 
       _currentUser = User(
         id: id,
         email: emailRes,
         fullName: fullName,
-        role: role == 'ADMIN' ? 'admin' : 'repartidor',
+        role: role,
         token: token,
+        refreshToken: refreshToken,
         phone: phone,
         tipoVehiculo: tipoVehiculo,
         matricula: matricula,
         userMetadata: {
           'full_name': fullName,
-          'role': role == 'ADMIN' ? 'admin' : 'repartidor',
+          'role': role,
           'celular': phone,
           'avatar_url': avatarUrl,
         },
@@ -411,8 +450,8 @@ class OrderProvider with ChangeNotifier {
     try {
       // 1. Registrar primero en el backend Spring Boot
       final response = await ApiClient.post(
-        'order',
-        '/api/v1/auth/register-preventista',
+        'sync',
+        '/api/v1/auth/signup',
         {
           'email': email,
           'password': password,
@@ -1046,6 +1085,19 @@ class OrderProvider with ChangeNotifier {
 
     await _db.insertOrder(newOrder);
     _orders.insert(0, newOrder);
+
+    // Encolar mutación para sincronizar con la base de datos PostgreSQL de order-service
+    final mutationId = generateUuid();
+    final Map<String, dynamic> payloadMap = newOrder.toMap();
+    await _db.insertMutation(
+      id: mutationId,
+      entityType: 'ORDER',
+      entityId: clientOrderId,
+      operation: 'CREATE',
+      payload: jsonEncode(payloadMap),
+    );
+
+    _pendingSyncCount = (await _db.getPendingMutations()).length;
     notifyListeners();
 
     if (_isOnline) {
@@ -1208,7 +1260,11 @@ class OrderProvider with ChangeNotifier {
   }
 
   Future<void> syncUnsyncedOrders() async {
-    if (_isSyncing || !_isOnline || currentUser == null) return;
+    if (_isSyncing || !_isOnline) return;
+
+    if (ApiClient.token == null && currentUser != null && currentUser!.token.isNotEmpty) {
+      ApiClient.token = currentUser!.token;
+    }
 
     final pendingMutations = await _db.getPendingMutations();
     _pendingSyncCount = pendingMutations.length;
@@ -1221,7 +1277,7 @@ class OrderProvider with ChangeNotifier {
     notifyListeners();
 
     debugPrint(
-      'Starting synchronization of ${pendingMutations.length} mutations to Java sync-service...',
+      'Starting synchronization of ${pendingMutations.length} mutations to Java sync-service (Host: ${ApiClient.syncBaseUrl})...',
     );
 
     try {
@@ -1248,10 +1304,17 @@ class OrderProvider with ChangeNotifier {
             else if (flutterStatus == 'entregado') mappedStatus = 'DELIVERED';
             else if (flutterStatus == 'cancelado') mappedStatus = 'CANCELLED';
 
+            String toValidUuid(String? input, String fallback) {
+              if (input != null && RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(input)) {
+                return input;
+              }
+              return fallback;
+            }
+
             final Map<String, dynamic> javaOrder = {
-              'clientOrderId': orderMap['client_order_id'],
-              'clientId': orderMap['user_id'],
-              'salespersonId': orderMap['repartidor_id'] ?? orderMap['user_id'],
+              'clientOrderId': toValidUuid(orderMap['client_order_id']?.toString(), generateUuid()),
+              'clientId': toValidUuid(orderMap['user_id']?.toString(), '33333333-3333-3333-3333-333333333333'),
+              'salespersonId': toValidUuid(orderMap['repartidor_id']?.toString() ?? orderMap['user_id']?.toString(), '44444444-4444-4444-4444-444444444444'),
               'createdAt': orderMap['created_at'],
               'totalAmount': totalAmount,
               'deliveryLatitude': orderMap['delivery_latitude'],
@@ -1260,12 +1323,12 @@ class OrderProvider with ChangeNotifier {
               'verificationCode': orderMap['verification_code'],
               'status': mappedStatus,
               'items': (() {
-                final prodId = orderMap['product_id'] as String? ?? 'hielo_bag';
+                final prodId = orderMap['product_id'] as String? ?? 'PROD-ICE-001';
                 if (prodId.startsWith('[')) {
                   try {
                     final List<dynamic> itemsList = jsonDecode(prodId);
                     return itemsList.map((it) => {
-                      'productId': it['productId'] ?? 'hielo_bag',
+                      'productId': it['productId'] ?? 'PROD-ICE-001',
                       'productName': it['productName'] ?? 'Bolsa de Hielo',
                       'quantity': (it['quantity'] ?? 1) as int,
                       'price': ((it['price'] ?? 0.0) as num).toDouble(),
@@ -1274,7 +1337,7 @@ class OrderProvider with ChangeNotifier {
                 }
                 return [
                   {
-                    'productId': prodId,
+                    'productId': prodId.contains('-') ? prodId : 'PROD-ICE-001',
                     'productName': orderMap['product_name'] ?? 'Bolsa de Hielo',
                     'quantity': quantity,
                     'price': price
@@ -1298,7 +1361,53 @@ class OrderProvider with ChangeNotifier {
         };
       }).toList();
 
-      final response = await ApiClient.post('sync', '/api/v1/sync', body);
+      if (ApiClient.token == null || ApiClient.token!.isEmpty) {
+        if (currentUser != null && currentUser!.token.isNotEmpty) {
+          ApiClient.token = currentUser!.token;
+        }
+      }
+
+      var response = await ApiClient.post('sync', '/api/v1/sync', body);
+
+      // Si devuelve 401 (token expirable o sin token), usar /api/v1/auth/refresh con refresh_token
+      if (response.statusCode == 401) {
+        debugPrint('Sync recibió 401 de sync-service. Rotando Refresh Token contra el backend Java...');
+        final String? currentRefreshToken = currentUser?.refreshToken;
+        if (currentRefreshToken != null && currentRefreshToken.isNotEmpty) {
+          try {
+            final refreshRes = await ApiClient.post('sync', '/api/v1/auth/refresh', {
+              'refresh_token': currentRefreshToken,
+            });
+
+            if (refreshRes.statusCode == 200) {
+              final authData = jsonDecode(refreshRes.body);
+              final String newToken = (authData['accessToken'] ?? authData['access_token'] ?? authData['token'] ?? '').toString();
+              final String newRefreshToken = (authData['refreshToken'] ?? authData['refresh_token'] ?? '').toString();
+              
+              ApiClient.token = newToken;
+              if (currentUser != null) {
+                _currentUser = User(
+                  id: currentUser!.id,
+                  email: currentUser!.email,
+                  fullName: currentUser!.fullName,
+                  role: currentUser!.role,
+                  token: newToken,
+                  refreshToken: newRefreshToken.isNotEmpty ? newRefreshToken : currentUser!.refreshToken,
+                  phone: currentUser!.phone,
+                  tipoVehiculo: currentUser!.tipoVehiculo,
+                  matricula: currentUser!.matricula,
+                  userMetadata: currentUser!.userMetadata,
+                );
+                await _saveSession(_currentUser!);
+              }
+              debugPrint('Refresh token rotado exitosamente en Java. Reintentando sincronización...');
+              response = await ApiClient.post('sync', '/api/v1/sync', body);
+            }
+          } catch (e) {
+            debugPrint('Error en rotación de refresh token durante sync: $e');
+          }
+        }
+      }
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
@@ -1314,6 +1423,8 @@ class OrderProvider with ChangeNotifier {
               .toList();
 
           await _db.deleteMutations(successfullySyncedMutationIds);
+          _pendingSyncCount = (await _db.getPendingMutations()).length;
+
           if (successfullySyncedOrderIds.isNotEmpty) {
             await _db.markOrdersAsSynced(successfullySyncedOrderIds);
             await loadOrders();
@@ -1322,6 +1433,7 @@ class OrderProvider with ChangeNotifier {
           if (_userRole == 'admin') {
             await fetchAdminOrders();
           }
+          debugPrint('Sync exitoso! ${successfullySyncedMutationIds.length} mutaciones eliminadas de la cola.');
         }
       } else {
         debugPrint('Sync failed with status code: ${response.statusCode} - ${response.body}');
@@ -1441,10 +1553,45 @@ class OrderProvider with ChangeNotifier {
   }
 
   List<Map<String, dynamic>> _clienteShops = [];
-  List<Map<String, dynamic>> get clienteShops => _clienteShops;
+  List<Map<String, dynamic>> get clienteShops => _clienteShops.isNotEmpty ? _clienteShops : _defaultClienteShops;
+
+  static final List<Map<String, dynamic>> _defaultClienteShops = [
+    {
+      'id': 'cli-demo-001',
+      'profile_id': 'cli-demo-001',
+      'nombre_comercial': 'Supermercado El Sol',
+      'direccion': 'Av. San Martín 1240, Rosario',
+      'latitud_comercial': -32.9477,
+      'longitud_comercial': -60.6305,
+      'celular': '+54 341 4567890',
+      'ruc_dni': '30-71234567-8',
+      'full_name': 'Carlos Rodríguez (Dueño)',
+    },
+    {
+      'id': 'cli-demo-002',
+      'profile_id': 'cli-demo-002',
+      'nombre_comercial': 'Distribuidora Los Pinos',
+      'direccion': 'Calle Belgrano 450, Rosario',
+      'latitud_comercial': -32.9512,
+      'longitud_comercial': -60.6411,
+      'celular': '+54 341 5678901',
+      'ruc_dni': '30-89012345-6',
+      'full_name': 'María Gómez (Gerente)',
+    },
+    {
+      'id': 'cli-demo-003',
+      'profile_id': 'cli-demo-003',
+      'nombre_comercial': 'Bar & Restó La Esquina',
+      'direccion': 'Pellegrini 1820, Rosario',
+      'latitud_comercial': -32.9560,
+      'longitud_comercial': -60.6520,
+      'celular': '+54 341 6789012',
+      'ruc_dni': '20-33445566-9',
+      'full_name': 'Juan Pérez (Administrador)',
+    },
+  ];
 
   Future<void> fetchClienteShops() async {
-    if (currentUser == null) return;
     try {
       final response = await ApiClient.get('order', '/api/v1/clients');
       if (response.statusCode == 200) {
@@ -1453,21 +1600,30 @@ class OrderProvider with ChangeNotifier {
           return {
             'id': c['id'],
             'profile_id': c['id'],
-            'nombre_comercial': c['name'],
-            'direccion': c['address'],
-            'latitud_comercial': c['latitude'],
-            'longitud_comercial': c['longitude'],
-            'celular': c['phone'] ?? '',
+            'nombre_comercial': c['name'] ?? c['nombre_comercial'] ?? 'Cliente Mayorista',
+            'direccion': c['address'] ?? c['direccion'] ?? 'Sin dirección',
+            'latitud_comercial': c['latitude'] ?? c['latitud'] ?? -32.9477,
+            'longitud_comercial': c['longitude'] ?? c['longitud'] ?? -60.6305,
+            'celular': c['phone'] ?? c['celular'] ?? '',
             'ruc_dni': c['taxId'] ?? c['tax_id'] ?? '',
-            'full_name': c['ownerName'] ?? c['owner_name'] ?? c['name'],
+            'full_name': c['ownerName'] ?? c['owner_name'] ?? c['name'] ?? 'Propietario',
           };
         }).toList();
 
-        _clienteShops = mappedShops;
+        if (mappedShops.isNotEmpty) {
+          _clienteShops = mappedShops;
+        } else {
+          _clienteShops = _defaultClienteShops;
+        }
+        notifyListeners();
+      } else {
+        _clienteShops = _defaultClienteShops;
         notifyListeners();
       }
     } catch (e) {
       debugPrint('Error fetching cliente shops: $e');
+      _clienteShops = _defaultClienteShops;
+      notifyListeners();
     }
   }
 
@@ -1489,6 +1645,7 @@ class OrderProvider with ChangeNotifier {
         'fullName': user.fullName,
         'role': user.role,
         'token': user.token,
+        'refreshToken': user.refreshToken,
         'phone': user.phone,
         'tipoVehiculo': user.tipoVehiculo,
         'matricula': user.matricula,
@@ -1512,12 +1669,14 @@ class OrderProvider with ChangeNotifier {
           fullName: data['fullName'],
           role: data['role'],
           token: data['token'],
+          refreshToken: data['refreshToken'],
           phone: data['phone'],
           tipoVehiculo: data['tipoVehiculo'],
           matricula: data['matricula'],
           userMetadata: Map<String, dynamic>.from(data['userMetadata'] ?? {}),
         );
         ApiClient.token = _currentUser!.token;
+        _userRole = _currentUser!.role;
       }
     } catch (e) {
       debugPrint('Error loading session: $e');
@@ -1990,6 +2149,19 @@ class OrderProvider with ChangeNotifier {
       debugPrint('Error clearing session: $e');
     }
   }
+
+  Map<String, dynamic> _parseJwt(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return {};
+      final payload = parts[1];
+      final normalized = base64Url.normalize(payload);
+      final resp = utf8.decode(base64Url.decode(normalized));
+      return jsonDecode(resp) as Map<String, dynamic>;
+    } catch (_) {
+      return {};
+    }
+  }
 }
 
 class User {
@@ -1998,6 +2170,7 @@ class User {
   final String fullName;
   final String role;
   final String token;
+  final String? refreshToken;
   final String? phone;
   final String? tipoVehiculo;
   final String? matricula;
@@ -2009,6 +2182,7 @@ class User {
     required this.fullName,
     required this.role,
     required this.token,
+    this.refreshToken,
     this.phone,
     this.tipoVehiculo,
     this.matricula,
