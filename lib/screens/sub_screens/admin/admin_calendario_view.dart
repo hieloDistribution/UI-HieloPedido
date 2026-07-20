@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/order_provider.dart';
 import '../shared/widgets/build_avatar_helper.dart';
+import '../../../core/network/api_client.dart';
 
 class AdminCalendarioView extends StatefulWidget {
   const AdminCalendarioView({super.key});
@@ -20,6 +22,10 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
   static const Color slate700 = Color(0xFF334155);
   static const Color slate900 = Color(0xFF0F172A);
   static const Color indigoCustom = Color(0xFF4F46E5);
+
+  final Map<String, List<Map<String, dynamic>>> _preventistaAgendas = {};
+  final Set<String> _expandedRepIds = {};
+  bool _loadingAgendas = false;
 
   Color getAgendaColor(String agendaId) {
     final List<Color> colors = [
@@ -43,19 +49,41 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
       final provider = Provider.of<OrderProvider>(context, listen: false);
       provider.fetchRepartidoresLocations();
       provider.fetchAdminAgendasToday();
+      provider.fetchAdminOrders();
     });
+  }
+
+  Future<void> _loadAgendasForPreventista(String repId) async {
+    setState(() {
+      _loadingAgendas = true;
+    });
+    try {
+      final response = await ApiClient.get('order', '/api/v1/agendas/preventista/$repId');
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          _preventistaAgendas[repId] = List<Map<String, dynamic>>.from(data);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading agendas for preventista: $e');
+    } finally {
+      setState(() {
+        _loadingAgendas = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
     final preventistas = provider.repartidores;
-    final agendas = provider.adminAgendasToday;
+    final agendasToday = provider.adminAgendasToday;
 
-    // Métricas
+    // Métricas para hoy
     final totalPreventistas = preventistas.length;
-    final withAgendaCount = agendas.length;
-    final completedAgendasCount = agendas.where((a) => a['status'] == 'COMPLETADA').length;
+    final withAgendaTodayCount = agendasToday.length;
+    final completedAgendasTodayCount = agendasToday.where((a) => a['status'] == 'COMPLETADA').length;
 
     return Scaffold(
       backgroundColor: slate50,
@@ -63,6 +91,10 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
         onRefresh: () async {
           await provider.fetchRepartidoresLocations();
           await provider.fetchAdminAgendasToday();
+          await provider.fetchAdminOrders();
+          for (final repId in _expandedRepIds) {
+            await _loadAgendasForPreventista(repId);
+          }
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -85,7 +117,7 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
             ),
             const SizedBox(height: 20),
 
-            // Bento Metric Cards
+            // Bento Metric Cards para hoy
             Row(
               children: [
                 Expanded(
@@ -103,7 +135,7 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Planificadas',
+                              'Planificadas Hoy',
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -115,7 +147,7 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '$withAgendaCount / $totalPreventistas',
+                          '$withAgendaTodayCount / $totalPreventistas',
                           style: GoogleFonts.outfit(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -142,7 +174,7 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Completadas',
+                              'Completadas Hoy',
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
@@ -154,7 +186,7 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '$completedAgendasCount',
+                          '$completedAgendasTodayCount',
                           style: GoogleFonts.outfit(
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
@@ -198,30 +230,22 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                     children: preventistas.map((rep) {
                       final repId = rep['id'] as String;
                       final repName = rep['full_name'] ?? rep['fullName'] ?? 'Preventista';
+                      final isExpanded = _expandedRepIds.contains(repId);
 
-                      // Buscar si tiene agenda hoy
-                      Map<String, dynamic>? agenda;
-                      for (final a in agendas) {
+                      // Buscar si tiene agenda asignada hoy
+                      Map<String, dynamic>? agendaToday;
+                      for (final a in agendasToday) {
                         if (a['preventista'] != null && a['preventista']['id'] == repId) {
-                          agenda = a;
+                          agendaToday = a;
                           break;
                         }
                       }
+                      final String todayStatus = agendaToday != null 
+                          ? (agendaToday['status'] ?? 'PENDIENTE') 
+                          : 'SIN_AGENDA';
 
-                      final String status = agenda != null ? (agenda['status'] ?? 'PENDIENTE') : 'SIN_AGENDA';
-                      final items = agenda != null ? (agenda['items'] as List? ?? []) : [];
-                      final completedCount = items.where((i) => i['status'] == 'COMPLETADO').length;
-                      final totalCount = items.length;
-                      final double progress = totalCount > 0 ? (completedCount / totalCount) : 0.0;
-
-                      final hasAgenda = status != 'SIN_AGENDA';
-                      final headerBg = hasAgenda ? getAgendaColor(agenda!['id']) : Colors.white;
-                      final headerBorderRadius = hasAgenda
-                          ? const BorderRadius.only(
-                              topLeft: Radius.circular(15),
-                              topRight: Radius.circular(15),
-                            )
-                          : BorderRadius.circular(15);
+                      final hasTodayAgenda = todayStatus != 'SIN_AGENDA';
+                      final headerBg = Colors.white;
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
@@ -240,210 +264,315 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Header: Avatar, Name and Status
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: headerBg,
-                                borderRadius: headerBorderRadius,
-                              ),
-                              child: Row(
-                                children: [
-                                  buildAvatarHelper(
-                                    repName,
-                                    rep['avatar_url'] as String?,
-                                    radius: 18,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          repName,
-                                          style: GoogleFonts.outfit(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14,
-                                            color: slate900,
-                                          ),
-                                        ),
-                                        Text(
-                                          rep['tipo_vehiculo'] ?? 'Sin vehículo',
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 11,
-                                            color: hasAgenda ? Colors.black.withOpacity(0.6) : slate400,
-                                          ),
-                                        ),
-                                      ],
+                            // Header del Preventista (Clickeable para Expandir)
+                            InkWell(
+                              onTap: () {
+                                if (isExpanded) {
+                                  setState(() => _expandedRepIds.remove(repId));
+                                } else {
+                                  setState(() => _expandedRepIds.add(repId));
+                                  _loadAgendasForPreventista(repId);
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: headerBg,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Row(
+                                  children: [
+                                    buildAvatarHelper(
+                                      repName,
+                                      rep['avatar_url'] as String?,
+                                      radius: 20,
                                     ),
-                                  ),
-                                  _buildStatusBadge(status),
-                                ],
-                              ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (status != 'SIN_AGENDA') ...[
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          'Progreso de visitas',
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: slate700,
-                                          ),
-                                        ),
-                                        Text(
-                                          '$completedCount / $totalCount paradas',
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: slate900,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(4),
-                                      child: LinearProgressIndicator(
-                                        value: progress,
-                                        minHeight: 6,
-                                        backgroundColor: slate100,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          status == 'COMPLETADA' ? const Color(0xFF10B981) : indigoCustom,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      'Ruta y Visitas de Hoy:',
-                                      style: GoogleFonts.outfit(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: slate700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Column(
-                                      children: items.map<Widget>((item) {
-                                        final client = item['client'] as Map<String, dynamic>? ?? {};
-                                        final cName = client['name'] ?? 'Cliente';
-                                        final isDone = item['status'] == 'COMPLETADO';
-
-                                        // Find client orders taken by this preventista today
-                                        final clientOrders = provider.adminOrders.where((o) =>
-                                            (o['user_id'] == client['id'] || o['client_name'] == cName) &&
-                                            o['repartidor_id']?.toString() == repId
-                                        ).toList();
-
-                                        String orderDetails = '';
-                                        if (clientOrders.isNotEmpty) {
-                                          orderDetails = clientOrders.map((o) => o['product_name'] ?? '').join(', ');
-                                        }
-
-                                        return Container(
-                                          width: double.infinity,
-                                          margin: const EdgeInsets.only(bottom: 6),
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: isDone ? const Color(0xFFF0FDF4) : slate100,
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(
-                                              color: isDone ? const Color(0xFFDCFCE7) : slate200,
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            repName,
+                                            style: GoogleFonts.outfit(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                              color: slate900,
                                             ),
                                           ),
-                                          child: Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Icon(
-                                                isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                                                color: isDone ? const Color(0xFF10B981) : slate400,
-                                                size: 16,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      cName,
-                                                      style: GoogleFonts.outfit(
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 12,
-                                                        color: slate900,
-                                                      ),
-                                                    ),
-                                                    if (isDone) ...[
-                                                      if (orderDetails.isNotEmpty) ...[
-                                                        const SizedBox(height: 2),
-                                                        Text(
-                                                          'Pedido: $orderDetails',
-                                                          style: GoogleFonts.openSans(
-                                                            fontSize: 11,
-                                                            color: const Color(0xFF1565C0),
-                                                            fontWeight: FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                      ] else ...[
-                                                        const SizedBox(height: 2),
-                                                        Text(
-                                                          item['notes'] != null && (item['notes'] as String).isNotEmpty
-                                                              ? 'Nota: ${item['notes']}'
-                                                              : 'Visita registrada sin venta.',
-                                                          style: GoogleFonts.openSans(
-                                                            fontSize: 10,
-                                                            color: slate400,
-                                                            fontStyle: FontStyle.italic,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ] else ...[
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        'Pendiente de visita',
-                                                        style: GoogleFonts.openSans(
-                                                          fontSize: 10,
-                                                          color: slate400,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
+                                          Text(
+                                            rep['tipo_vehiculo'] ?? 'Sin vehículo',
+                                            style: GoogleFonts.outfit(
+                                              fontSize: 11,
+                                              color: slate700,
+                                            ),
                                           ),
-                                        );
-                                      }).toList(),
-                                    ),
-                                  ] else ...[
-                                    const Text(
-                                      'No se ha planificado recorrido para este preventista hoy.',
-                                      style: TextStyle(
-                                        color: slate400,
-                                        fontSize: 12,
-                                        fontStyle: FontStyle.italic,
+                                        ],
                                       ),
                                     ),
+                                    if (hasTodayAgenda) ...[
+                                      _buildStatusBadge(todayStatus),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    Icon(
+                                      isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                      color: slate700,
+                                    ),
                                   ],
-                                ],
+                                ),
                               ),
                             ),
+
+                            // Contenido Expandido: Historial de Agendas & Pedidos
+                            if (isExpanded) ...[
+                              Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // 1. SECCIÓN HISTORIAL DE RUTAS
+                                    _buildSectionHeader('HISTORIAL DE RUTAS Y AGENDAS'),
+                                    const SizedBox(height: 8),
+                                    _buildAgendasList(repId),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       );
                     }).toList(),
                   ),
+            const SizedBox(height: 120),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildSectionHeader(String title) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: slate100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: Text(
+          title,
+          style: GoogleFonts.outfit(
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+            color: slate700,
+            letterSpacing: 0.8,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgendasList(String repId) {
+    if (_loadingAgendas && !_preventistaAgendas.containsKey(repId)) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: CircularProgressIndicator(color: indigoCustom, strokeWidth: 2),
+        ),
+      );
+    }
+
+    final agendas = _preventistaAgendas[repId] ?? [];
+    if (agendas.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16.0),
+          child: Text(
+            'No tiene agendas registradas en el historial',
+            style: GoogleFonts.openSans(fontSize: 12, color: slate400, fontStyle: FontStyle.italic),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: agendas.map((agenda) {
+        final dateStr = agenda['date'] ?? '';
+        final status = agenda['status'] ?? 'PENDIENTE';
+        final items = agenda['items'] as List? ?? [];
+        final completedCount = items.where((i) => i['status'] == 'COMPLETADO').length;
+        final totalCount = items.length;
+
+        double totalRecaudado = 0.0;
+        final provider = Provider.of<OrderProvider>(context, listen: false);
+        for (var item in items) {
+          final client = item['client'] as Map<String, dynamic>? ?? {};
+          final cName = client['name'] ?? 'Cliente';
+          final clientOrders = provider.adminOrders.where((o) {
+            final orderDate = o['created_at'] != null && o['created_at'].toString().length >= 10
+                ? o['created_at'].toString().substring(0, 10)
+                : '';
+            return (o['user_id'] == client['id'] || o['client_name'] == cName) &&
+                   o['preventista_id']?.toString() == repId &&
+                   orderDate == dateStr;
+          }).toList();
+          for (var o in clientOrders) {
+            final List oItems = o['items'] as List? ?? [];
+            for (var oi in oItems) {
+              final double p = (oi['price'] ?? 0.0) as double;
+              final int q = (oi['quantity'] ?? 1) as int;
+              totalRecaudado += p * q;
+            }
+          }
+        }
+
+        final Color agendaColor = getAgendaColor(agenda['id'] ?? '').withOpacity(0.15);
+
+        return Card(
+          elevation: 0,
+          margin: const EdgeInsets.only(bottom: 8),
+          color: agendaColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: slate200),
+          ),
+          child: ExpansionTile(
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Ruta del $dateStr',
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: slate900,
+                  ),
+                ),
+                _buildStatusBadge(status),
+              ],
+            ),
+            subtitle: Text(
+              '$completedCount / $totalCount paradas • Recaudado: \$${totalRecaudado.toStringAsFixed(2)}',
+              style: GoogleFonts.openSans(
+                fontSize: 11,
+                color: slate700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            childrenPadding: const EdgeInsets.all(12),
+            children: [
+              if (items.isEmpty)
+                Text(
+                  'No hay paradas definidas para esta ruta',
+                  style: GoogleFonts.openSans(fontSize: 11, color: slate400),
+                )
+              else
+                Column(
+                  children: items.map<Widget>((item) {
+                    final client = item['client'] as Map<String, dynamic>? ?? {};
+                    final cName = client['name'] ?? 'Cliente';
+                    final isDone = item['status'] == 'COMPLETADO';
+                    final note = item['notes'] as String? ?? '';
+                    final isRejected = status.toUpperCase() == 'RECHAZADA';
+
+                    final provider = Provider.of<OrderProvider>(context, listen: false);
+                    final clientOrders = provider.adminOrders.where((o) {
+                      final orderDate = o['created_at'] != null && o['created_at'].toString().length >= 10
+                          ? o['created_at'].toString().substring(0, 10)
+                          : '';
+                      return (o['user_id'] == client['id'] || o['client_name'] == cName) &&
+                             o['preventista_id']?.toString() == repId &&
+                             orderDate == dateStr;
+                    }).toList();
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                isRejected 
+                                    ? Icons.cancel 
+                                    : (isDone ? Icons.check_circle : Icons.radio_button_unchecked),
+                                color: isRejected 
+                                    ? const Color(0xFFEF4444) 
+                                    : (isDone ? const Color(0xFF10B981) : slate400),
+                                size: 14,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  cName,
+                                  style: GoogleFonts.openSans(
+                                    fontSize: 12,
+                                    color: slate900,
+                                    fontWeight: isDone ? FontWeight.bold : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (isRejected)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 22.0, top: 2.0),
+                              child: Text(
+                                'No visitado (Ruta rechazada)',
+                                style: GoogleFonts.openSans(
+                                  fontSize: 11,
+                                  color: const Color(0xFFEF4444),
+                                  fontStyle: FontStyle.italic,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            )
+                          else if (isDone && clientOrders.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 22.0, top: 4.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: clientOrders.expand((o) {
+                                  final List orderItems = o['items'] as List? ?? [];
+                                  return orderItems.map((item) {
+                                    return Text(
+                                      '• ${item['product_name']}  x${item['quantity']}  (\$${(item['price'] as double).toStringAsFixed(2)})',
+                                      style: GoogleFonts.openSans(
+                                        fontSize: 11,
+                                        color: const Color(0xFF1E40AF),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  });
+                                }).toList(),
+                              ),
+                            )
+                          else if (isDone && note.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 22.0, top: 2.0),
+                              child: Text(
+                                'Nota: $note',
+                                style: GoogleFonts.openSans(
+                                  fontSize: 11,
+                                  color: slate400,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+
 
   Widget _buildStatusBadge(String status) {
     Color bg;
@@ -452,19 +581,37 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
 
     switch (status.toUpperCase()) {
       case 'PENDIENTE':
+      case 'PENDING':
         bg = const Color(0xFFFEF3C7);
         fg = const Color(0xFF92400E);
         text = 'Pendiente';
         break;
       case 'ACEPTADA':
+      case 'ACCEPTED':
+      case 'ACEPTADO':
         bg = const Color(0xFFDBEAFE);
         fg = const Color(0xFF1E40AF);
         text = 'Aceptada';
         break;
       case 'COMPLETADA':
+      case 'DELIVERED':
+      case 'ENTREGADO':
         bg = const Color(0xFFD1FAE5);
         fg = const Color(0xFF065F46);
         text = 'Completada';
+        break;
+      case 'RECHAZADA':
+      case 'CANCELLED':
+      case 'CANCELADO':
+        bg = const Color(0xFFFEE2E2);
+        fg = const Color(0xFF991B1B);
+        text = 'Rechazada';
+        break;
+      case 'DISPATCHED':
+      case 'EN_CAMINO':
+        bg = const Color(0xFFE0F2FE);
+        fg = const Color(0xFF0369A1);
+        text = 'En Camino';
         break;
       case 'SIN_AGENDA':
       default:
@@ -482,9 +629,9 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
       child: Text(
         text,
         style: GoogleFonts.outfit(
-          color: fg,
           fontSize: 10,
           fontWeight: FontWeight.bold,
+          color: fg,
         ),
       ),
     );

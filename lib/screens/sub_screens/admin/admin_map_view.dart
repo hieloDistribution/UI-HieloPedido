@@ -551,6 +551,10 @@ class _AdminMapViewState extends State<AdminMapView> {
                                           color: Colors.grey,
                                         ),
                                       ),
+                                      if (selectedAgenda.isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        _buildMapStatusBadge(selectedAgenda['status'] ?? 'PENDIENTE'),
+                                      ],
                                     ],
                                   ),
                                 ],
@@ -624,6 +628,18 @@ class _AdminMapViewState extends State<AdminMapView> {
                                   orderDetails = clientOrders.map((o) => o['product_name'] ?? '').join(', ');
                                 }
 
+                                final agendaStatus = (selectedAgenda['status'] ?? 'PENDIENTE').toString().toUpperCase();
+                                final isRejected = agendaStatus == 'RECHAZADA';
+                                final String badgeText = isItemCompleted 
+                                    ? 'Visitado' 
+                                    : (isRejected ? 'No visitado' : 'Pendiente');
+                                final Color badgeBg = isItemCompleted 
+                                    ? const Color(0xFF065F46) 
+                                    : (isRejected ? const Color(0xFF991B1B).withOpacity(0.4) : Colors.white12);
+                                final Color badgeFg = isItemCompleted 
+                                    ? Colors.greenAccent 
+                                    : (isRejected ? const Color(0xFFF87171) : Colors.white60);
+
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.all(8),
@@ -633,7 +649,13 @@ class _AdminMapViewState extends State<AdminMapView> {
                                   ),
                                   child: Row(
                                     children: [
-                                      const Icon(Icons.storefront_outlined, color: Colors.greenAccent, size: 16),
+                                      Icon(
+                                        Icons.storefront_outlined, 
+                                        color: isItemCompleted 
+                                            ? Colors.greenAccent 
+                                            : (isRejected ? const Color(0xFFEF4444) : Colors.white70), 
+                                        size: 16
+                                      ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Column(
@@ -665,6 +687,16 @@ class _AdminMapViewState extends State<AdminMapView> {
                                                   color: Colors.grey,
                                                 ),
                                               ),
+                                            ] else if (isRejected) ...[
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Ruta no aceptada por preventista',
+                                                style: GoogleFonts.openSans(
+                                                  fontSize: 9,
+                                                  color: const Color(0xFFF87171),
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                              ),
                                             ],
                                           ],
                                         ),
@@ -672,15 +704,15 @@ class _AdminMapViewState extends State<AdminMapView> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                         decoration: BoxDecoration(
-                                          color: isItemCompleted ? const Color(0xFF065F46) : Colors.white12,
+                                          color: badgeBg,
                                           borderRadius: BorderRadius.circular(6),
                                         ),
                                         child: Text(
-                                          isItemCompleted ? 'Visitado' : 'Pendiente',
+                                          badgeText,
                                           style: GoogleFonts.outfit(
                                             fontSize: 9,
                                             fontWeight: FontWeight.bold,
-                                            color: isItemCompleted ? Colors.greenAccent : Colors.white60,
+                                            color: badgeFg,
                                           ),
                                         ),
                                       ),
@@ -861,6 +893,66 @@ class _AdminMapViewState extends State<AdminMapView> {
     final ui.Image markerImage = await pictureRecorder.endRecording().toImage(size.toInt(), (size + 10).toInt());
     final ByteData? byteData = await markerImage.toByteData(format: ui.ImageByteFormat.png);
     return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  Widget _buildMapStatusBadge(String status) {
+    Color bg;
+    Color fg;
+    String text;
+    switch (status.toUpperCase()) {
+      case 'PENDIENTE':
+      case 'PENDING':
+        bg = const Color(0xFFFEF3C7).withOpacity(0.2);
+        fg = const Color(0xFFFBBF24);
+        text = 'Pendiente';
+        break;
+      case 'ACEPTADA':
+      case 'ACCEPTED':
+      case 'ACEPTADO':
+        bg = const Color(0xFFDBEAFE).withOpacity(0.2);
+        fg = const Color(0xFF60A5FA);
+        text = 'Aceptada';
+        break;
+      case 'COMPLETADA':
+      case 'DELIVERED':
+      case 'ENTREGADO':
+        bg = const Color(0xFFD1FAE5).withOpacity(0.2);
+        fg = const Color(0xFF34D399);
+        text = 'Completada';
+        break;
+      case 'RECHAZADA':
+      case 'CANCELLED':
+      case 'CANCELADO':
+        bg = const Color(0xFFFEE2E2).withOpacity(0.2);
+        fg = const Color(0xFFF87171);
+        text = 'Rechazada';
+        break;
+      case 'DISPATCHED':
+      case 'EN_CAMINO':
+        bg = const Color(0xFFE0F2FE).withOpacity(0.2);
+        fg = const Color(0xFF38BDF8);
+        text = 'En Camino';
+        break;
+      default:
+        bg = Colors.white10;
+        fg = Colors.white70;
+        text = 'Sin Agenda';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.outfit(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: fg,
+        ),
+      ),
+    );
   }
 }
 

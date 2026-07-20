@@ -377,8 +377,12 @@ class OrderProvider with ChangeNotifier {
       if (_userRole == 'admin') {
         await fetchAdminOrders();
         await fetchRepartidoresLocations();
+        await fetchAdminAgendasToday();
       } else {
         await loadOrders();
+        await fetchTodayAgenda();
+        await fetchUserAgendas();
+        await fetchAdminProfile();
         _startLocationReporting();
       }
     } finally {
@@ -446,8 +450,29 @@ class OrderProvider with ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      if (currentUser != null && _userRole == 'repartidor') {
+        try {
+          await ApiClient.post('order', '/api/v1/preventistas/${currentUser!.id}/offline', {});
+        } catch (e) {
+          debugPrint('Error reporting offline status: $e');
+        }
+      }
+
       _currentUser = null;
+      _userRole = 'repartidor';
+      _todayAgenda = null;
+      _userAgendas = [];
+      _adminName = 'Administrador de Ventas';
+      _adminAvatarUrl = null;
+      _repartidores = [];
+      _clientes = [];
+      _orders = [];
+      _adminOrders = [];
+      _adminAgendasToday = [];
+      _currentUserAvatarUrl = null;
+      _currentUserFullName = null;
       ApiClient.token = null;
+
       await _clearSession();
       _stopLocationReporting();
       _stopOrdersRealtimeSync();
@@ -527,6 +552,7 @@ class OrderProvider with ChangeNotifier {
       } else {
         await fetchOrdersFromBackend(silent: true);
         await fetchTodayAgenda();
+        await fetchUserAgendas();
       }
     });
   }
@@ -1233,13 +1259,28 @@ class OrderProvider with ChangeNotifier {
               'deliveryAddress': orderMap['delivery_address'],
               'verificationCode': orderMap['verification_code'],
               'status': mappedStatus,
-              'items': [
-                {
-                  'productId': orderMap['product_id'] ?? 'hielo_bag',
-                  'quantity': quantity,
-                  'price': price
+              'items': (() {
+                final prodId = orderMap['product_id'] as String? ?? 'hielo_bag';
+                if (prodId.startsWith('[')) {
+                  try {
+                    final List<dynamic> itemsList = jsonDecode(prodId);
+                    return itemsList.map((it) => {
+                      'productId': it['productId'] ?? 'hielo_bag',
+                      'productName': it['productName'] ?? 'Bolsa de Hielo',
+                      'quantity': (it['quantity'] ?? 1) as int,
+                      'price': ((it['price'] ?? 0.0) as num).toDouble(),
+                    }).toList();
+                  } catch (_) {}
                 }
-              ]
+                return [
+                  {
+                    'productId': prodId,
+                    'productName': orderMap['product_name'] ?? 'Bolsa de Hielo',
+                    'quantity': quantity,
+                    'price': price
+                  }
+                ];
+              })()
             };
             mappedPayload = jsonEncode(javaOrder);
           } catch (e) {
@@ -1302,6 +1343,7 @@ class OrderProvider with ChangeNotifier {
       final response = await ApiClient.get('order', '/api/v1/orders');
       if (response.statusCode == 200) {
         final List<dynamic> ordersData = jsonDecode(response.body);
+        debugPrint('ADMIN ORDERS BODY: ${response.body}');
         
         final preventistasRes = await ApiClient.get('order', '/api/v1/preventistas');
         final Map<String, dynamic> profilesMap = {};
@@ -1318,7 +1360,9 @@ class OrderProvider with ChangeNotifier {
         }
 
         _adminOrders = ordersData.map<Map<String, dynamic>>((o) {
-          final clientId = o['clientId'] as String? ?? '';
+          final clientObj = o['client'] as Map<String, dynamic>?;
+          final clientId = clientObj != null ? (clientObj['id'] as String? ?? '') : '';
+          final clientName = clientObj != null ? (clientObj['name'] as String? ?? 'Cliente') : 'Cliente';
           final profile = profilesMap[clientId];
           
           double price = 0.0;
@@ -1347,17 +1391,38 @@ class OrderProvider with ChangeNotifier {
           return {
             'client_order_id': o['clientOrderId'],
             'user_id': clientId,
-            'client_name': profile?['full_name'] ?? 'Cliente',
+            'client_name': clientName,
             'product_name': productName,
             'quantity': quantity,
             'price': price,
             'created_at': o['createdAt'],
             'status': mappedStatus,
             'repartidor_id': o['deliveryDriver']?['id'] ?? o['salespersonId'],
+            'preventista_id': o['preventista'] != null ? (o['preventista']['id'] as String? ?? '') : '',
             'verification_code': o['verificationCode'],
             'delivery_address': o['deliveryAddress'],
             'client_phone': o['clientPhone'],
             'profiles': profile,
+            'items': o['items'] != null ? (o['items'] as List).map((i) {
+              final String rawName = i['productName'] ?? i['product_name'] ?? 'Bolsa de Hielo';
+              if (rawName.startsWith('[')) {
+                try {
+                  final decoded = jsonDecode(rawName);
+                  if (decoded is List) {
+                    return decoded.map((e) => {
+                      'product_name': e['productName'] ?? e['product_name'] ?? 'Bolsa de Hielo',
+                      'quantity': e['quantity'] ?? 1,
+                      'price': ((e['price'] ?? 0.0) as num).toDouble(),
+                    }).toList();
+                  }
+                } catch (_) {}
+              }
+              return [{
+                'product_name': rawName,
+                'quantity': i['quantity'] ?? 1,
+                'price': ((i['price'] ?? 0.0) as num).toDouble(),
+              }];
+            }).expand((x) => x).toList() : [],
           };
         }).toList();
       }
@@ -1747,6 +1812,13 @@ class OrderProvider with ChangeNotifier {
   Future<void> acceptAgenda(String agendaId) async {
     if (currentUser == null) return;
 
+    final idx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (idx != -1) {
+      _userAgendas[idx]['status'] = 'ACEPTADA';
+      await _saveLocalUserAgendas(_userAgendas);
+      notifyListeners();
+    }
+
     if (_todayAgenda != null && _todayAgenda!['id'] == agendaId) {
       _todayAgenda!['status'] = 'ACEPTADA';
       await _saveLocalAgenda(_todayAgenda!);
@@ -1893,6 +1965,18 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
+  Future<void> _clearLocalUserAgendas() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/user_agendas.json');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Error clearing local user agendas: $e');
+    }
+  }
+
   Future<void> _clearSession() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
@@ -1900,6 +1984,8 @@ class OrderProvider with ChangeNotifier {
       if (await file.exists()) {
         await file.delete();
       }
+      await _clearLocalAgenda();
+      await _clearLocalUserAgendas();
     } catch (e) {
       debugPrint('Error clearing session: $e');
     }

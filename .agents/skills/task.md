@@ -51,5 +51,14 @@
   - [x] Actualizar el endpoint `register-preventista` del backend Spring Boot para recibir y mapear `phone`, `tipoVehiculo` y `matricula` en la base de datos
   - [x] Sincronizar el payload del provider para enviar los datos completos de preventista en el registro HTTP
   - [x] Implementar un **Indicador visual de seguridad de contraseña** con colores dinámicos (rojo: inseguro, amarillo: medio, verde: fuerte)
+- [x] Forzar Estado Offline al Desloguearse
+  - [x] Implementar endpoint POST `/{id}/offline` en `PreventistaController.java` de Spring Boot para cambiar `lastLocationUpdated`
+  - [x] Invocar la llamada a este endpoint al pulsar "Cerrar Sesión" en la app móvil antes de borrar los tokens de memoria
+- [x] Historial de Agendas Expandible del Preventista
+  - [x] Agregar control de expansión a las tarjetas de preventistas en `AdminCalendarioView`
+  - [x] Cargar bajo demanda el historial completo de agendas de cada preventista (`/api/v1/agendas/preventista/{id}`) al expandir
+  - [x] Agregar soporte estético para el estado `'RECHAZADA'` en el badge de estado
+  - [x] Centrar y estilizar los títulos de cabecera de las secciones ("HISTORIAL DE RUTAS Y AGENDAS" y "PEDIDOS REGISTRADOS")
+  - [x] Mostrar el listado de pedidos realizados por cada preventista con detalles completos de cada producto (nombre, cantidad, precio) y suma total
 - [x] Verificar Compilación
   - [x] Ejecutar `flutter analyze` para verificar que todo compile limpio
