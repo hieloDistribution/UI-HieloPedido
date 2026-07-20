@@ -26,6 +26,14 @@ class OrderProvider with ChangeNotifier {
   final List<Map<String, dynamic>> _repartidores = [];
   List<Map<String, dynamic>> _catalogProducts = [];
   List<Map<String, dynamic>> _clienteShops = [];
+  final List<Map<String, dynamic>> _clientes = [];
+  List<Map<String, dynamic>> _adminAgendasToday = [];
+  final List<Map<String, dynamic>> _userAgendas = [];
+
+  // --- Admin profile (for the repartidor's agenda greeting banner) -----
+  String _adminName = 'Administrador';
+  String? _adminAvatarUrl;
+  Map<String, dynamic>? _selectedRepartidorForMap;
 
   // --- Business rules (mirror OrderService.java MIN_ORDER_WEIGHT_KG / MAX_ROUTE_WEIGHT_KG) ---
   static const double kMinOrderWeightKg = 100.0;
@@ -71,6 +79,12 @@ class OrderProvider with ChangeNotifier {
   List<Map<String, dynamic>> get repartidores => _repartidores;
   List<Map<String, dynamic>> get catalogProducts => _catalogProducts;
   List<Map<String, dynamic>> get clienteShops => _clienteShops;
+  List<Map<String, dynamic>> get clientes => _clientes;
+  List<Map<String, dynamic>> get adminAgendasToday => _adminAgendasToday;
+  List<Map<String, dynamic>> get userAgendas => _userAgendas;
+  String get adminName => _adminName;
+  String? get adminAvatarUrl => _adminAvatarUrl;
+  Map<String, dynamic>? get selectedRepartidorForMap => _selectedRepartidorForMap;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   bool get isOnline => _isOnline;
@@ -1095,6 +1109,158 @@ class OrderProvider with ChangeNotifier {
     } catch (e) {
       debugPrint('fetchClienteShops error: $e');
     }
+  }
+
+  /// Cached list of clients used by admin/assignment flows (separate from
+  /// _clienteShops to avoid forcing legacy cliente dropdown code to handle
+  /// the shape returned by the agendas/clientes endpoints).
+  Future<void> fetchClientes() async {
+    if (_userId == null || !_isOnline) return;
+    try {
+      final resp = await ApiClient.instance.get('order', '/api/v1/clients');
+      if (resp.statusCode == 200) {
+        _clientes
+          ..clear()
+          ..addAll((jsonDecode(resp.body) as List)
+              .map((c) => (c as Map).cast<String, dynamic>()));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchClientes error: $e');
+    }
+  }
+
+  // --- Agendas / Preventistas ------------------------------------------
+  /// Loads the admin's profile (used as the greeting avatar in the
+  /// repartidor agenda screen). Tolerant of offline — keeps the previous
+  /// values on failure.
+  Future<void> fetchAdminProfile() async {
+    if (_userId == null || !_isOnline) return;
+    try {
+      final resp = await ApiClient.instance.get('order', '/api/v1/preventistas/admin');
+      if (resp.statusCode == 200) {
+        final data = _decode(resp.body);
+        _adminName = (data['fullName'] ?? data['full_name'] ?? 'Administrador').toString();
+        _adminAvatarUrl = (data['avatarUrl'] ?? data['avatar_url']) as String?;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchAdminProfile error: $e');
+    }
+  }
+
+  /// Public alias of [refreshUserRole] for screen code that wants to make
+  /// the intent explicit (e.g. the repartidor agenda refreshes the user's
+  /// profile in parallel with admin profile / agenda fetches).
+  Future<void> fetchCurrentUserProfile() => refreshUserRole();
+
+  /// Admin view: list of agendas scheduled for today, grouped by preventista.
+  Future<void> fetchAdminAgendasToday() async {
+    if (_userId == null || !_isOnline) return;
+    try {
+      final resp = await ApiClient.instance.get('order', '/api/v1/agendas/today');
+      if (resp.statusCode == 200) {
+        _adminAgendasToday = (jsonDecode(resp.body) as List)
+            .map((a) => (a as Map).cast<String, dynamic>())
+            .toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchAdminAgendasToday error: $e');
+    }
+  }
+
+  /// Repartidor view: list of agendas assigned to the current user.
+  Future<void> fetchUserAgendas() async {
+    if (_userId == null) return;
+    if (!_isOnline) {
+      notifyListeners();
+      return;
+    }
+    try {
+      final resp =
+          await ApiClient.instance.get('order', '/api/v1/agendas/preventista/$_userId');
+      if (resp.statusCode == 200) {
+        _userAgendas
+          ..clear()
+          ..addAll((jsonDecode(resp.body) as List)
+              .map((a) => (a as Map).cast<String, dynamic>()));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchUserAgendas error: $e');
+    }
+  }
+
+  /// Admin assigns a route agenda to a preventista for a given date.
+  /// Returns `true` only when the backend acknowledges with 201.
+  Future<bool> assignAgenda({
+    required String preventistaId,
+    required DateTime date,
+    required List<String> clientIds,
+  }) async {
+    if (_userId == null || !_isOnline) return false;
+    try {
+      final formatted =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final resp = await ApiClient.instance.post('order', '/api/v1/agendas', {
+        'preventistaId': preventistaId,
+        'date': formatted,
+        'clientIds': clientIds,
+      });
+      if (resp.statusCode == 201) {
+        await fetchAdminAgendasToday();
+        return true;
+      }
+      debugPrint('assignAgenda rejected: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      debugPrint('assignAgenda error: $e');
+      return false;
+    }
+  }
+
+  /// Repartidor accepts an agenda. Optimistic local update, then sync.
+  Future<void> acceptAgenda(String agendaId) async {
+    if (_userId == null) return;
+    final idx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (idx != -1) {
+      _userAgendas[idx] = {..._userAgendas[idx], 'status': 'ACEPTADA'};
+      notifyListeners();
+    }
+    if (!_isOnline) return;
+    try {
+      await ApiClient.instance.post(
+          'order', '/api/v1/agendas/$agendaId/status', {'status': 'ACEPTADA'});
+      await fetchUserAgendas();
+    } catch (e) {
+      debugPrint('acceptAgenda error: $e');
+    }
+  }
+
+  /// Repartidor rejects an agenda. Optimistic local update, then sync.
+  Future<void> rejectAgenda(String agendaId) async {
+    if (_userId == null) return;
+    final idx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (idx != -1) {
+      _userAgendas[idx] = {..._userAgendas[idx], 'status': 'RECHAZADA'};
+      notifyListeners();
+    }
+    if (!_isOnline) return;
+    try {
+      await ApiClient.instance.post(
+          'order', '/api/v1/agendas/$agendaId/status', {'status': 'RECHAZADA'});
+      await fetchUserAgendas();
+    } catch (e) {
+      debugPrint('rejectAgenda error: $e');
+    }
+  }
+
+  /// Mark a repartidor so the map view can focus on it (used by the admin
+  /// "Proveedores" screen when the user taps the map icon).
+  void selectRepartidorForMap(Map<String, dynamic>? repartidor) {
+    _selectedRepartidorForMap = repartidor;
+    notifyListeners();
   }
 
   // --- Silent polling (fallback while WS reconnects) --------------------
