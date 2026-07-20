@@ -334,10 +334,18 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
     return Scaffold(
       backgroundColor: slate50,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await provider.loadOrders();
+            await provider.fetchTodayAgenda();
+            await provider.fetchUserAgendas();
+            await provider.fetchCurrentUserProfile();
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -752,6 +760,7 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -879,6 +888,59 @@ class _RepartidorInicioViewState extends State<RepartidorInicioView> {
     final status = agenda['status'] ?? 'PENDIENTE';
     final itemsCount = (agenda['items'] as List?)?.length ?? 0;
     final isPending = status == 'PENDIENTE';
+    final isCompleted = status == 'COMPLETADA';
+
+    if (isCompleted) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F5E9), // light green
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF81C784)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Color(0xFFC8E6C9),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle_outline,
+                color: Color(0xFF2E7D32),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '¡Agenda de Hoy Completada! 🎉',
+                    style: GoogleFonts.outfit(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: const Color(0xFF2E7D32),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Completaste con éxito todas tus visitas del día. ¡Buen trabajo!',
+                    style: GoogleFonts.openSans(
+                      fontSize: 11,
+                      color: const Color(0xFF1B5E20),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       width: double.infinity,

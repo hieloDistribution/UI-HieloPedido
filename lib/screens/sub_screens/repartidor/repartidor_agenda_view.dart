@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:provider/provider.dart';
 import '../../../providers/order_provider.dart';
+import '../shared/widgets/build_avatar_helper.dart';
 import 'create_order_view.dart';
 
 class RepartidorAgendaView extends StatefulWidget {
@@ -21,13 +22,104 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
   static const Color slate900 = Color(0xFF0F172A);
   static const Color indigoCustom = Color(0xFF4F46E5);
 
-  // Indice del local con popover abierto
+  String _selectedFilter = 'All';
+  Map<String, dynamic>? _selectedAgenda;
   int? _activePopoverIndex;
+
+  Color getAgendaColor(String agendaId) {
+    final List<Color> colors = [
+      const Color(0xFFFEF08A), // Light Yellow (yellow 200)
+      const Color(0xFFBFDBFE), // Light Blue (blue 200)
+      const Color(0xFFE9D5FF), // Light Purple (purple 200)
+      const Color(0xFFFBCFE8), // Light Pink (pink 200)
+      const Color(0xFFA7F3D0), // Light Green (emerald 200)
+    ];
+    int hash = 0;
+    for (int i = 0; i < agendaId.length; i++) {
+      hash += agendaId.codeUnitAt(i);
+    }
+    return colors[hash % colors.length];
+  }
+
+  Color _getStatusBgColor(String status) {
+    switch (status) {
+      case 'PENDIENTE':
+        return const Color(0xFFFEF3C7);
+      case 'ACEPTADA':
+        return const Color(0xFFE0E7FF);
+      case 'COMPLETADA':
+        return const Color(0xFFD1FAE5);
+      case 'RECHAZADA':
+        return const Color(0xFFFEE2E2);
+      default:
+        return const Color(0xFFF1F5F9);
+    }
+  }
+
+  Color _getStatusTextColor(String status) {
+    switch (status) {
+      case 'PENDIENTE':
+        return const Color(0xFFD97706);
+      case 'ACEPTADA':
+        return const Color(0xFF4F46E5);
+      case 'COMPLETADA':
+        return const Color(0xFF059669);
+      case 'RECHAZADA':
+        return const Color(0xFFEF4444);
+      default:
+        return slate700;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<OrderProvider>(context);
-    final agenda = provider.todayAgenda;
+
+    // If a specific agenda is selected, render its Duolingo map path view
+    if (_selectedAgenda != null) {
+      final updatedAgenda = provider.userAgendas.firstWhere(
+        (a) => a['id'] == _selectedAgenda!['id'],
+        orElse: () => _selectedAgenda!,
+      );
+
+      return Scaffold(
+        backgroundColor: slate50,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF0F172A), size: 18),
+            onPressed: () {
+              setState(() {
+                _selectedAgenda = null;
+                _activePopoverIndex = null;
+              });
+            },
+          ),
+          title: Text(
+            'Ruta ${updatedAgenda['id'].toString().substring(0, 7)}',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.bold,
+              fontSize: 17,
+              color: slate900,
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: RefreshIndicator(
+          onRefresh: () async {
+            await provider.fetchUserAgendas();
+          },
+          child: _buildAgendaScreen(provider, updatedAgenda),
+        ),
+      );
+    }
+
+    // Filter logic
+    final filteredAgendas = provider.userAgendas.where((a) {
+      if (_selectedFilter == 'All') return true;
+      return a['status'] == _selectedFilter;
+    }).toList();
 
     return Scaffold(
       backgroundColor: slate50,
@@ -35,7 +127,7 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
         backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
-          'Mi Agenda de Trabajo',
+          'Mis Agendas de Trabajo',
           style: GoogleFonts.outfit(
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -46,62 +138,377 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await provider.fetchTodayAgenda();
+          await provider.fetchUserAgendas();
           await provider.fetchAdminProfile();
+          await provider.fetchCurrentUserProfile();
         },
-        child: agenda == null
-            ? _buildEmptyState()
-            : _buildAgendaScreen(provider, agenda),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          children: [
+            // Filter Pills Selector
+            _buildFilterPills(),
+            const SizedBox(height: 16),
+
+            if (filteredAgendas.isEmpty)
+              _buildEmptyState()
+            else
+              ...filteredAgendas.map((agenda) => _buildAgendaCard(provider, agenda)).toList(),
+
+            const SizedBox(height: 120), // bottom offset spacer
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterPills() {
+    final filters = ['All', 'PENDIENTE', 'ACEPTADA', 'COMPLETADA'];
+    final labels = {
+      'All': 'Todas',
+      'PENDIENTE': 'Pendientes',
+      'ACEPTADA': 'Aceptadas',
+      'COMPLETADA': 'Completadas',
+    };
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: filters.map((f) {
+          final isSelected = _selectedFilter == f;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: ChoiceChip(
+              label: Text(
+                labels[f]!,
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: isSelected ? Colors.white : slate700,
+                ),
+              ),
+              selected: isSelected,
+              selectedColor: slate900,
+              backgroundColor: Colors.white,
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() {
+                    _selectedFilter = f;
+                  });
+                }
+              },
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
   Widget _buildEmptyState() {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: [
-        Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(40),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: slate200),
+    return Container(
+      margin: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.all(40),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: slate200),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: slate100,
+              shape: BoxShape.circle,
+            ),
+            child: const HugeIcon(
+              icon: HugeIcons.strokeRoundedCalendar04,
+              color: slate400,
+              size: 36,
+            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: slate100,
-                  shape: BoxShape.circle,
+          const SizedBox(height: 16),
+          Text(
+            'Sin Agendas Coincidentes',
+            style: GoogleFonts.outfit(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: slate900,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'No se encontraron agendas registradas bajo este filtro en el día de hoy.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.openSans(
+              fontSize: 13,
+              color: slate400,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAgendaCard(OrderProvider provider, Map<String, dynamic> agenda) {
+    final agendaId = agenda['id'] ?? '';
+    final status = agenda['status'] ?? 'PENDIENTE';
+    final dateStr = agenda['date'] ?? '';
+    final items = agenda['items'] as List? ?? [];
+    
+    final headerColor = getAgendaColor(agendaId);
+    
+    final clientNames = items.map<String>((i) {
+      final c = i['client'] as Map<String, dynamic>? ?? {};
+      return c['name'] ?? 'Cliente';
+    }).join(', ');
+
+    final shortId = agendaId.length > 7 ? agendaId.substring(0, 7) : agendaId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: slate200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.015),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: headerColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(23),
+                topRight: Radius.circular(23),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                  child: ClipOval(
+                    child: buildAvatarHelper(provider.adminName, provider.adminAvatarUrl, radius: 18),
+                  ),
                 ),
-                child: const HugeIcon(
-                  icon: HugeIcons.strokeRoundedCalendar04,
-                  color: slate400,
-                  size: 36,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Agenda Asignada',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: slate900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          shortId,
+                          style: GoogleFonts.outfit(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: slate900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getStatusBgColor(status),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    status,
+                    style: GoogleFonts.outfit(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _getStatusTextColor(status),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Card Details
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              children: [
+                _buildCardDetailRow('Clientes:', clientNames),
+                const SizedBox(height: 10),
+                _buildCardDetailRow('Asignado por:', provider.adminName),
+                const SizedBox(height: 10),
+                _buildCardDetailRow('Fecha:', dateStr),
+              ],
+            ),
+          ),
+
+          // Action buttons
+          if (status == 'PENDIENTE') ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 18, right: 18, bottom: 18),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => provider.rejectAgenda(agendaId),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.redAccent,
+                        side: const BorderSide(color: Colors.redAccent),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: Text(
+                        'Rechazar',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => provider.acceptAgenda(agendaId),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: slate900,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        'Aceptar',
+                        style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (status == 'ACEPTADA') ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 18, right: 18, bottom: 18),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _selectedAgenda = agenda;
+                    });
+                  },
+                  icon: const Icon(Icons.play_circle_outline, color: Colors.white, size: 16),
+                  label: Text(
+                    'Iniciar Ruta',
+                    style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    elevation: 0,
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              Text(
-                'Sin Agenda Asignada',
-                style: GoogleFonts.outfit(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: slate900,
-                ),
+            ),
+          ] else if (status == 'COMPLETADA') ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 18, right: 18, bottom: 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: Color(0xFF10B981), size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Completada',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF065F46),
+                        ),
+                      ),
+                    ],
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _selectedAgenda = agenda;
+                      });
+                    },
+                    icon: const Icon(Icons.visibility_outlined, size: 16, color: Color(0xFF4F46E5)),
+                    label: Text(
+                      'Ver Ruta',
+                      style: GoogleFonts.outfit(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF4F46E5)),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                'El administrador no te ha asignado visitas para la fecha de hoy. Disfruta tu día o ponte en contacto.',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.openSans(
-                  fontSize: 13,
-                  color: slate400,
-                ),
-              ),
-            ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardDetailRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 90,
+          child: Text(
+            label,
+            style: GoogleFonts.outfit(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: slate400,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            value,
+            style: GoogleFonts.openSans(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: slate900,
+            ),
           ),
         ),
       ],
@@ -110,107 +517,76 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
 
   Widget _buildAgendaScreen(OrderProvider provider, Map<String, dynamic> agenda) {
     final status = agenda['status'] ?? 'PENDIENTE';
-    final isPending = status == 'PENDIENTE';
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
-        // 1. Cabecera del Admin & Mensaje Motivador estilo Duolingo
         _buildAdminHeader(provider),
         const SizedBox(height: 20),
 
-        if (isPending) ...[
-          // Acceptance Panel (Antes de aceptar la agenda)
+        if (status == 'COMPLETADA') ...[
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFFE8F5E9),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFFDE68A)), // amber
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.amber.withOpacity(0.02),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              border: Border.all(color: const Color(0xFF81C784)),
             ),
-            child: Column(
+            child: Row(
               children: [
-                const HugeIcon(
-                  icon: HugeIcons.strokeRoundedCalendar04,
-                  color: Colors.amber,
-                  size: 40,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Confirmar Ruta del Día',
-                  style: GoogleFonts.outfit(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: slate900,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'El administrador te ha planificado un recorrido. Confirma la aceptación para desbloquear el mapa de visitas e iniciar tu ruta comercial.',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.openSans(
-                    fontSize: 13,
-                    color: slate700,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      await provider.acceptAgenda(agenda['id']);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: indigoCustom,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                const Icon(Icons.stars, color: Color(0xFF2E7D32), size: 36),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '¡Ruta Completada!',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: const Color(0xFF2E7D32),
+                        ),
                       ),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      'Aceptar Agenda y Empezar',
-                      style: GoogleFonts.outfit(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                      const SizedBox(height: 2),
+                      Text(
+                        'Completaste con éxito todas tus visitas programadas para el día de hoy. ¡Sigue así! 🚀',
+                        style: GoogleFonts.openSans(
+                          fontSize: 12,
+                          color: const Color(0xFF1B5E20),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-        ] else ...[
-          // 2. Ruta Gamificada estilo Duolingo (Cuando está ACEPTADA)
-          Text(
-            'Tu Ruta de Hoy',
-            style: GoogleFonts.outfit(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: slate900,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Toca cualquier local de la ruta para ver sus detalles en pantalla y tomar pedido.',
-            style: GoogleFonts.openSans(
-              fontSize: 12,
-              color: slate400,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildDuolingoPath(provider, agenda['items'] as List? ?? []),
+          const SizedBox(height: 20),
         ],
+
+        Text(
+          'Tu Ruta de Hoy',
+          style: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: slate900,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          status == 'COMPLETADA'
+              ? '¡Completaste tu recorrido de hoy!'
+              : 'Toca cualquier local de la ruta para ver sus detalles en pantalla y tomar pedido.',
+          style: GoogleFonts.openSans(
+            fontSize: 12,
+            color: status == 'COMPLETADA' ? const Color(0xFF2E7D32) : slate400,
+            fontWeight: status == 'COMPLETADA' ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _buildDuolingoPath(provider, agenda['items'] as List? ?? []),
       ],
     );
   }
@@ -228,7 +604,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar del Admin Real-time
           Container(
             width: 48,
             height: 48,
@@ -253,7 +628,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
                 : null,
           ),
           const SizedBox(width: 14),
-          // Burbuja de Mensaje (Estilo diálogo de mascota de Duolingo)
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,7 +644,7 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4), // light green
+                    color: const Color(0xFFF0FDF4),
                     borderRadius: const BorderRadius.only(
                       topRight: Radius.circular(16),
                       bottomLeft: Radius.circular(16),
@@ -309,7 +683,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
         for (int i = 0; i < items.length; i++) {
           final double y = 50.0 + i * rowHeight;
           double x;
-          // Patrón serpiente: Centro-Izquierda-Centro-Derecha-Centro...
           final int pattern = i % 4;
           if (pattern == 0) {
             x = width * 0.5;
@@ -340,14 +713,11 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // Línea punteada de fondo
                 Positioned.fill(
                   child: CustomPaint(
                     painter: DuolingoPathPainter(points),
                   ),
                 ),
-
-                // Botones circulares (Nodos de clientes)
                 for (int i = 0; i < items.length; i++) ...[
                   Positioned(
                     left: points[i].dx - nodeRadius,
@@ -355,8 +725,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
                     child: _buildPathNode(context, items[i], i),
                   ),
                 ],
-
-                // Popover inline flotante al lado de la parada (estilo Duolingo sin abrir tarjeta separada)
                 if (_activePopoverIndex != null) ...[
                   Builder(
                     builder: (context) {
@@ -365,7 +733,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
                       final client = item['client'] as Map<String, dynamic>? ?? {};
                       final name = client['name'] ?? 'Cliente';
 
-                      // Buscar detalles actualizados en local shops para garantizar teléfono y dueño
                       final shopMatch = provider.clienteShops.firstWhere(
                         (shop) => shop['id'] == client['id'],
                         orElse: () => {},
@@ -379,7 +746,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
                       double popoverWidth = 240.0;
                       double popoverHeight = 155.0;
                       double left = nodeOffset.dx - (popoverWidth / 2);
-                      // Clamp horizontal
                       if (left < 12) left = 12;
                       if (left + popoverWidth > width - 12) {
                         left = width - popoverWidth - 12;
@@ -513,7 +879,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
       },
       child: Column(
         children: [
-          // Botón circular estilo Duolingo con profundidad 3D
           Container(
             width: 64,
             height: 64,
@@ -538,7 +903,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
             ),
           ),
           const SizedBox(height: 10),
-          // Nombre pequeño del local
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
@@ -562,7 +926,6 @@ class _RepartidorAgendaViewState extends State<RepartidorAgendaView> {
   }
 }
 
-// Pintador de curvas estilo Duolingo
 class DuolingoPathPainter extends CustomPainter {
   final List<Offset> points;
   DuolingoPathPainter(this.points);
@@ -571,7 +934,7 @@ class DuolingoPathPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (points.length < 2) return;
     final paint = Paint()
-      ..color = const Color(0xFFCBD5E1) // slate300
+      ..color = const Color(0xFFCBD5E1)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4
       ..strokeCap = StrokeCap.round;
@@ -582,13 +945,11 @@ class DuolingoPathPainter extends CustomPainter {
     for (int i = 1; i < points.length; i++) {
       final p0 = points[i - 1];
       final p1 = points[i];
-      // Puntos de control Bezier
       final cp1 = Offset(p0.dx, (p0.dy + p1.dy) / 2);
       final cp2 = Offset(p1.dx, (p0.dy + p1.dy) / 2);
       path.cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, p1.dx, p1.dy);
     }
 
-    // Dibujar línea punteada
     final dashWidth = 8.0;
     final dashSpace = 6.0;
     double distance = 0.0;

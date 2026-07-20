@@ -21,6 +21,21 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
   static const Color slate900 = Color(0xFF0F172A);
   static const Color indigoCustom = Color(0xFF4F46E5);
 
+  Color getAgendaColor(String agendaId) {
+    final List<Color> colors = [
+      const Color(0xFFFEF08A), // Light Yellow
+      const Color(0xFFBFDBFE), // Light Blue
+      const Color(0xFFE9D5FF), // Light Purple
+      const Color(0xFFFBCFE8), // Light Pink
+      const Color(0xFFA7F3D0), // Light Green
+    ];
+    int hash = 0;
+    for (int i = 0; i < agendaId.length; i++) {
+      hash += agendaId.codeUnitAt(i);
+    }
+    return colors[hash % colors.length];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -199,9 +214,17 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                       final totalCount = items.length;
                       final double progress = totalCount > 0 ? (completedCount / totalCount) : 0.0;
 
+                      final hasAgenda = status != 'SIN_AGENDA';
+                      final headerBg = hasAgenda ? getAgendaColor(agenda!['id']) : Colors.white;
+                      final headerBorderRadius = hasAgenda
+                          ? const BorderRadius.only(
+                              topLeft: Radius.circular(15),
+                              topRight: Radius.circular(15),
+                            )
+                          : BorderRadius.circular(15);
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
@@ -218,193 +241,199 @@ class _AdminCalendarioViewState extends State<AdminCalendarioView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // Header: Avatar, Name and Status
-                            Row(
-                              children: [
-                                buildAvatarHelper(
-                                  repName,
-                                  rep['avatar_url'] as String?,
-                                  radius: 18,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        repName,
-                                        style: GoogleFonts.outfit(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: slate900,
-                                        ),
-                                      ),
-                                      Text(
-                                        rep['tipo_vehiculo'] ?? 'Sin vehículo',
-                                        style: GoogleFonts.outfit(
-                                          fontSize: 11,
-                                          color: slate400,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                _buildStatusBadge(status),
-                              ],
-                            ),
-
-                            // Progress section
-                            if (status != 'SIN_AGENDA') ...[
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 12),
-                                child: Divider(color: Color(0xFFF1F5F9)),
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: headerBg,
+                                borderRadius: headerBorderRadius,
                               ),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              child: Row(
                                 children: [
-                                  Text(
-                                    'Progreso de visitas',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: slate700,
-                                    ),
+                                  buildAvatarHelper(
+                                    repName,
+                                    rep['avatar_url'] as String?,
+                                    radius: 18,
                                   ),
-                                  Text(
-                                    '$completedCount / $totalCount paradas',
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: slate900,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(4),
-                                child: LinearProgressIndicator(
-                                  value: progress,
-                                  minHeight: 6,
-                                  backgroundColor: slate100,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    status == 'COMPLETADA' ? const Color(0xFF10B981) : indigoCustom,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Ruta y Visitas de Hoy:',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: slate700,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Column(
-                                children: items.map<Widget>((item) {
-                                  final client = item['client'] as Map<String, dynamic>? ?? {};
-                                  final cName = client['name'] ?? 'Cliente';
-                                  final isDone = item['status'] == 'COMPLETADO';
-
-                                  // Find client orders taken by this preventista today
-                                  final clientOrders = provider.adminOrders.where((o) =>
-                                      (o['user_id'] == client['id'] || o['client_name'] == cName) &&
-                                      o['repartidor_id']?.toString() == repId
-                                  ).toList();
-
-                                  String orderDetails = '';
-                                  if (clientOrders.isNotEmpty) {
-                                    orderDetails = clientOrders.map((o) => o['product_name'] ?? '').join(', ');
-                                  }
-
-                                  return Container(
-                                    width: double.infinity,
-                                    margin: const EdgeInsets.only(bottom: 6),
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: isDone ? const Color(0xFFF0FDF4) : slate100,
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: isDone ? const Color(0xFFDCFCE7) : slate200,
-                                      ),
-                                    ),
-                                    child: Row(
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Icon(
-                                          isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                                          color: isDone ? const Color(0xFF10B981) : slate400,
-                                          size: 16,
+                                        Text(
+                                          repName,
+                                          style: GoogleFonts.outfit(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                            color: slate900,
+                                          ),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                cName,
-                                                style: GoogleFonts.outfit(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                  color: slate900,
-                                                ),
-                                              ),
-                                              if (isDone) ...[
-                                                if (orderDetails.isNotEmpty) ...[
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    'Pedido: $orderDetails',
-                                                    style: GoogleFonts.openSans(
-                                                      fontSize: 11,
-                                                      color: const Color(0xFF1565C0),
-                                                      fontWeight: FontWeight.w600,
-                                                    ),
-                                                  ),
-                                                ] else ...[
-                                                  const SizedBox(height: 2),
-                                                  Text(
-                                                    item['notes'] != null && (item['notes'] as String).isNotEmpty
-                                                        ? 'Nota: ${item['notes']}'
-                                                        : 'Visita registrada sin venta.',
-                                                    style: GoogleFonts.openSans(
-                                                      fontSize: 10,
-                                                      color: slate400,
-                                                      fontStyle: FontStyle.italic,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ] else ...[
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Pendiente de visita',
-                                                  style: GoogleFonts.openSans(
-                                                    fontSize: 10,
-                                                    color: slate400,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
+                                        Text(
+                                          rep['tipo_vehiculo'] ?? 'Sin vehículo',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 11,
+                                            color: hasAgenda ? Colors.black.withOpacity(0.6) : slate400,
                                           ),
                                         ),
                                       ],
                                     ),
-                                  );
-                                }).toList(),
-                              ),
-                            ] else ...[
-                              const Padding(
-                                padding: EdgeInsets.only(top: 12),
-                                child: Text(
-                                  'No se ha planificado recorrido para este preventista hoy.',
-                                  style: TextStyle(
-                                    color: slate400,
-                                    fontSize: 12,
-                                    fontStyle: FontStyle.italic,
                                   ),
-                                ),
+                                  _buildStatusBadge(status),
+                                ],
                               ),
-                            ],
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (status != 'SIN_AGENDA') ...[
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Progreso de visitas',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: slate700,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$completedCount / $totalCount paradas',
+                                          style: GoogleFonts.outfit(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: slate900,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        value: progress,
+                                        minHeight: 6,
+                                        backgroundColor: slate100,
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                          status == 'COMPLETADA' ? const Color(0xFF10B981) : indigoCustom,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'Ruta y Visitas de Hoy:',
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: slate700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Column(
+                                      children: items.map<Widget>((item) {
+                                        final client = item['client'] as Map<String, dynamic>? ?? {};
+                                        final cName = client['name'] ?? 'Cliente';
+                                        final isDone = item['status'] == 'COMPLETADO';
+
+                                        // Find client orders taken by this preventista today
+                                        final clientOrders = provider.adminOrders.where((o) =>
+                                            (o['user_id'] == client['id'] || o['client_name'] == cName) &&
+                                            o['repartidor_id']?.toString() == repId
+                                        ).toList();
+
+                                        String orderDetails = '';
+                                        if (clientOrders.isNotEmpty) {
+                                          orderDetails = clientOrders.map((o) => o['product_name'] ?? '').join(', ');
+                                        }
+
+                                        return Container(
+                                          width: double.infinity,
+                                          margin: const EdgeInsets.only(bottom: 6),
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: isDone ? const Color(0xFFF0FDF4) : slate100,
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: isDone ? const Color(0xFFDCFCE7) : slate200,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Icon(
+                                                isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                                                color: isDone ? const Color(0xFF10B981) : slate400,
+                                                size: 16,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      cName,
+                                                      style: GoogleFonts.outfit(
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 12,
+                                                        color: slate900,
+                                                      ),
+                                                    ),
+                                                    if (isDone) ...[
+                                                      if (orderDetails.isNotEmpty) ...[
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          'Pedido: $orderDetails',
+                                                          style: GoogleFonts.openSans(
+                                                            fontSize: 11,
+                                                            color: const Color(0xFF1565C0),
+                                                            fontWeight: FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ] else ...[
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          item['notes'] != null && (item['notes'] as String).isNotEmpty
+                                                              ? 'Nota: ${item['notes']}'
+                                                              : 'Visita registrada sin venta.',
+                                                          style: GoogleFonts.openSans(
+                                                            fontSize: 10,
+                                                            color: slate400,
+                                                            fontStyle: FontStyle.italic,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ] else ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        'Pendiente de visita',
+                                                        style: GoogleFonts.openSans(
+                                                          fontSize: 10,
+                                                          color: slate400,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ] else ...[
+                                    const Text(
+                                      'No se ha planificado recorrido para este preventista hoy.',
+                                      style: TextStyle(
+                                        color: slate400,
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       );

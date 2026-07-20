@@ -26,6 +26,8 @@ class OrderProvider with ChangeNotifier {
   bool get isGpsReportingEnabled => _isGpsReportingEnabled;
   Map<String, dynamic>? _todayAgenda;
   Map<String, dynamic>? get todayAgenda => _todayAgenda;
+  List<Map<String, dynamic>> _userAgendas = [];
+  List<Map<String, dynamic>> get userAgendas => _userAgendas;
 
   final DbHelper _db = DbHelper.instance;
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
@@ -120,6 +122,7 @@ class OrderProvider with ChangeNotifier {
       } else {
         await loadOrders();
         await fetchTodayAgenda();
+        await fetchUserAgendas();
         await fetchAdminProfile();
         _startLocationReporting();
       }
@@ -231,9 +234,57 @@ class OrderProvider with ChangeNotifier {
       notifyListeners();
       _startOrdersRealtimeSync();
       _startProfilesRealtimeSync();
+
+      // Fetch latest profile from DB to ensure avatar/details are synced
+      fetchCurrentUserProfile();
     } catch (e) {
       debugPrint('Error fetching user role: $e');
       _userRole = 'repartidor';
+    }
+  }
+
+  Future<void> fetchCurrentUserProfile() async {
+    if (currentUser == null) return;
+    try {
+      final response = await ApiClient.get('order', '/api/v1/preventistas/${currentUser!.id}');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        final String? avatarUrl = data['avatarUrl'] ?? data['avatar_url'];
+        final String? fullName = data['fullName'] ?? data['full_name'];
+        final String? phone = data['phone'] ?? data['celular'];
+        final String? tipoVehiculo = data['tipoVehiculo'] ?? data['tipo_vehiculo'];
+        final String? matricula = data['matricula'];
+
+        if (avatarUrl != null) {
+          _currentUserAvatarUrl = avatarUrl;
+          currentUser!.userMetadata['avatar_url'] = avatarUrl;
+        }
+        if (fullName != null) {
+          _currentUserFullName = fullName;
+          currentUser!.userMetadata['full_name'] = fullName;
+        }
+        if (phone != null) {
+          _currentUserCelular = phone;
+          currentUser!.userMetadata['celular'] = phone;
+        }
+
+        _currentUser = User(
+          id: currentUser!.id,
+          email: currentUser!.email,
+          fullName: fullName ?? currentUser!.fullName,
+          role: currentUser!.role,
+          token: currentUser!.token,
+          phone: phone ?? currentUser!.phone,
+          tipoVehiculo: tipoVehiculo ?? currentUser!.tipoVehiculo,
+          matricula: matricula ?? currentUser!.matricula,
+          userMetadata: currentUser!.userMetadata,
+        );
+
+        await _saveSession(_currentUser!);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching current user profile: $e');
     }
   }
 
@@ -296,6 +347,7 @@ class OrderProvider with ChangeNotifier {
       final String? phone = data['phone'];
       final String? tipoVehiculo = data['tipoVehiculo'];
       final String? matricula = data['matricula'];
+      final String? avatarUrl = data['avatarUrl'] ?? data['avatar_url'];
 
       ApiClient.token = token;
 
@@ -312,9 +364,11 @@ class OrderProvider with ChangeNotifier {
           'full_name': fullName,
           'role': role == 'ADMIN' ? 'admin' : 'repartidor',
           'celular': phone,
+          'avatar_url': avatarUrl,
         },
       );
 
+      _currentUserAvatarUrl = avatarUrl;
       await _saveSession(_currentUser!);
 
       notifyListeners();
@@ -359,6 +413,9 @@ class OrderProvider with ChangeNotifier {
           'email': email,
           'password': password,
           'fullName': fullName,
+          'phone': celular,
+          'tipoVehiculo': tipoVehiculo,
+          'matricula': matricula,
         },
       );
 
@@ -1580,6 +1637,113 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
+  Future<void> fetchUserAgendas() async {
+    if (currentUser == null) return;
+    if (_isOnline) {
+      try {
+        final response = await ApiClient.get('order', '/api/v1/agendas/preventista/${currentUser!.id}');
+        if (response.statusCode == 200) {
+          final List<dynamic> data = jsonDecode(response.body);
+          _userAgendas = List<Map<String, dynamic>>.from(data);
+          await _saveLocalUserAgendas(_userAgendas);
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('Error fetching user agendas: $e');
+        _userAgendas = await _loadLocalUserAgendas();
+        notifyListeners();
+      }
+    } else {
+      _userAgendas = await _loadLocalUserAgendas();
+      notifyListeners();
+    }
+  }
+
+  Future<void> rejectAgenda(String agendaId) async {
+    if (currentUser == null) return;
+
+    final idx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (idx != -1) {
+      _userAgendas[idx]['status'] = 'RECHAZADA';
+      await _saveLocalUserAgendas(_userAgendas);
+      notifyListeners();
+    }
+
+    if (_todayAgenda != null && _todayAgenda!['id'] == agendaId) {
+      _todayAgenda!['status'] = 'RECHAZADA';
+      await _saveLocalAgenda(_todayAgenda!);
+      notifyListeners();
+    }
+
+    if (_isOnline) {
+      try {
+        await ApiClient.post('order', '/api/v1/agendas/$agendaId/status', {'status': 'RECHAZADA'});
+      } catch (e) {
+        debugPrint('Error sending reject status to server: $e');
+      }
+    }
+  }
+
+  Future<void> completeAgendaItemForAgenda(String agendaId, String itemId, String notes) async {
+    final aIdx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (aIdx != -1) {
+      final agenda = Map<String, dynamic>.from(_userAgendas[aIdx]);
+      final items = List<Map<String, dynamic>>.from(agenda['items'] ?? []);
+      final idx = items.indexWhere((i) => i['id'] == itemId);
+      if (idx != -1) {
+        items[idx]['status'] = 'COMPLETADO';
+        items[idx]['notes'] = notes;
+        items[idx]['completedAt'] = DateTime.now().toUtc().toIso8601String();
+        agenda['items'] = items;
+
+        final allCompleted = items.every((i) => i['status'] == 'COMPLETADO');
+        if (allCompleted) {
+          agenda['status'] = 'COMPLETADA';
+        }
+        _userAgendas[aIdx] = agenda;
+        await _saveLocalUserAgendas(_userAgendas);
+        
+        if (_todayAgenda != null && _todayAgenda!['id'] == agendaId) {
+          _todayAgenda = agenda;
+          await _saveLocalAgenda(_todayAgenda!);
+        }
+        notifyListeners();
+      }
+    }
+
+    if (_isOnline) {
+      try {
+        await ApiClient.post('order', '/api/v1/agendas/items/$itemId/complete', {'notes': notes});
+      } catch (e) {
+        debugPrint('Error completing item on server: $e');
+      }
+    }
+  }
+
+  Future<void> _saveLocalUserAgendas(List<Map<String, dynamic>> agendas) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/user_agendas.json');
+      await file.writeAsString(jsonEncode(agendas));
+    } catch (e) {
+      debugPrint('Error saving local user agendas: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadLocalUserAgendas() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/user_agendas.json');
+      if (await file.exists()) {
+        final List<dynamic> data = jsonDecode(await file.readAsString());
+        return List<Map<String, dynamic>>.from(data);
+      }
+    } catch (e) {
+      debugPrint('Error loading local user agendas: $e');
+    }
+    return [];
+  }
+
   Future<void> acceptAgenda(String agendaId) async {
     if (currentUser == null) return;
 
@@ -1602,33 +1766,48 @@ class OrderProvider with ChangeNotifier {
   }
 
   Future<void> completeAgendaItem(String itemId, String notes) async {
-    if (_todayAgenda != null && _todayAgenda!['items'] != null) {
-      final items = List<Map<String, dynamic>>.from(_todayAgenda!['items']);
-      final idx = items.indexWhere((i) => i['id'] == itemId);
-      if (idx != -1) {
-        items[idx]['status'] = 'COMPLETADO';
-        items[idx]['notes'] = notes;
-        items[idx]['completedAt'] = DateTime.now().toUtc().toIso8601String();
-        _todayAgenda!['items'] = items;
-
-        final allCompleted = items.every((i) => i['status'] == 'COMPLETADO');
-        if (allCompleted) {
-          _todayAgenda!['status'] = 'COMPLETADA';
-        }
-        await _saveLocalAgenda(_todayAgenda!);
-        notifyListeners();
+    // Find which agenda contains this itemId in _userAgendas
+    String? foundAgendaId;
+    for (var agenda in _userAgendas) {
+      final List items = agenda['items'] as List? ?? [];
+      final hasItem = items.any((i) => i['id'] == itemId);
+      if (hasItem) {
+        foundAgendaId = agenda['id'];
+        break;
       }
     }
 
-    if (_isOnline) {
-      try {
-        await ApiClient.post('order', '/api/v1/agendas/items/$itemId/complete', {'notes': notes});
-      } catch (e) {
-        debugPrint('Error sending complete item status to server, queueing mutation: $e');
+    if (foundAgendaId != null) {
+      await completeAgendaItemForAgenda(foundAgendaId, itemId, notes);
+    } else {
+      if (_todayAgenda != null && _todayAgenda!['items'] != null) {
+        final items = List<Map<String, dynamic>>.from(_todayAgenda!['items']);
+        final idx = items.indexWhere((i) => i['id'] == itemId);
+        if (idx != -1) {
+          items[idx]['status'] = 'COMPLETADO';
+          items[idx]['notes'] = notes;
+          items[idx]['completedAt'] = DateTime.now().toUtc().toIso8601String();
+          _todayAgenda!['items'] = items;
+
+          final allCompleted = items.every((i) => i['status'] == 'COMPLETADO');
+          if (allCompleted) {
+            _todayAgenda!['status'] = 'COMPLETADA';
+          }
+          await _saveLocalAgenda(_todayAgenda!);
+          notifyListeners();
+        }
+      }
+
+      if (_isOnline) {
+        try {
+          await ApiClient.post('order', '/api/v1/agendas/items/$itemId/complete', {'notes': notes});
+        } catch (e) {
+          debugPrint('Error sending complete item status to server, queueing mutation: $e');
+          await _queueAgendaItemMutation(itemId, 'UPDATE', jsonEncode({'status': 'COMPLETADO', 'notes': notes}));
+        }
+      } else {
         await _queueAgendaItemMutation(itemId, 'UPDATE', jsonEncode({'status': 'COMPLETADO', 'notes': notes}));
       }
-    } else {
-      await _queueAgendaItemMutation(itemId, 'UPDATE', jsonEncode({'status': 'COMPLETADO', 'notes': notes}));
     }
   }
 
