@@ -1149,6 +1149,11 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
+  /// Public alias of [refreshUserRole] for screen code that wants to make
+  /// the intent explicit (e.g. the repartidor agenda refreshes the user's
+  /// profile in parallel with admin profile / agenda fetches).
+  Future<void> fetchCurrentUserProfile() => refreshUserRole();
+
   /// Admin view: list of agendas scheduled for today, grouped by preventista.
   Future<void> fetchAdminAgendasToday() async {
     if (_userId == null || !_isOnline) return;

@@ -8,7 +8,18 @@ import '../shared/widgets/build_avatar_helper.dart';
 import '../shared/widgets/success_overlay_dialog.dart';
 
 class CreateOrderView extends StatefulWidget {
-  const CreateOrderView({super.key});
+  const CreateOrderView({super.key, this.prefilledClientId, this.agendaItemId});
+
+  /// When set, the matching shop is preselected in the dropdown. Used by
+  /// the repartidor agenda path (admin-assigned route) to skip the manual
+  /// client picker step.
+  final String? prefilledClientId;
+
+  /// Informational — the parent repartidor agenda screen passes the
+  /// agenda-item id so future analytics can tie orders back to the agenda
+  /// visit. The current backend ignores it; kept here so the contract
+  /// matches what the offline-sync agenda view expects.
+  final String? agendaItemId;
 
   @override
   State<CreateOrderView> createState() => _CreateOrderViewState();
@@ -38,6 +49,16 @@ class _CreateOrderViewState extends State<CreateOrderView> {
         await Future<void>.delayed(const Duration(seconds: 2));
         if (!mounted) return;
         await p.fetchClienteShops();
+      }
+      // Apply prefilled client (from agenda path) once shops are loaded.
+      if (mounted && widget.prefilledClientId != null) {
+        final match = p.clienteShops.firstWhere(
+          (s) => s['id'] == widget.prefilledClientId,
+          orElse: () => const <String, dynamic>{},
+        );
+        if (match.isNotEmpty) {
+          setState(() => _selectedShop = match);
+        }
       }
     });
   }
