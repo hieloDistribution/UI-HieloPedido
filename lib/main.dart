@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth/token_storage.dart';
+import 'core/network/api_client.dart';
 import 'core/theme/theme.dart';
 import 'providers/order_provider.dart';
 import 'screens/welcome_screen.dart';
@@ -10,6 +11,7 @@ import 'screens/main_navigation_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ApiClient.instance.initialize();
   final hasSession = await TokenStorage.instance.isAuthenticated();
 
   runApp(

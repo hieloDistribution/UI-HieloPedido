@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/order_provider.dart';
 import 'admin_screen.dart';
+import 'sub_screens/admin/admin_calendario_view.dart';
+import 'sub_screens/admin/admin_proveedores_view.dart';
 import 'sub_screens/cliente/cliente_inicio_view.dart';
 import 'sub_screens/cliente/cliente_compras_view.dart';
 import 'sub_screens/cliente/cliente_tracking_tab.dart';
 import 'sub_screens/cliente/cliente_orders_history_view.dart';
 import 'sub_screens/repartidor/repartidor_inicio_view.dart';
+import 'sub_screens/repartidor/repartidor_agenda_view.dart';
 import 'sub_screens/repartidor/create_order_view.dart';
 import 'sub_screens/shared/profile_section.dart';
 import 'sub_screens/repartidor/distributor_orders_dashboard.dart';
@@ -58,7 +61,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
     }
     _cachedRole = role;
     _screens = role == 'admin'
-        ? [const AdminScreen(), const ProfileSection()]
+        ? [
+            const AdminScreen(),
+            const AdminCalendarioView(),
+            const AdminProveedoresView(),
+            const ProfileSection(),
+          ]
         : (role == 'cliente'
             ? [
                 const ClienteInicioView(),
@@ -76,6 +84,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
                 : [
                     const RepartidorInicioView(),
                     DistributorOrdersDashboard(),
+                    const RepartidorAgendaView(),
                     const ProfileSection(),
                   ]));
     return _screens!;
@@ -92,6 +101,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
             BottomNavItem(
               icon: Icons.admin_panel_settings_outlined,
               label: 'Panel',
+            ),
+            BottomNavItem(
+              icon: Icons.calendar_today_outlined,
+              label: 'Agenda',
+            ),
+            BottomNavItem(
+              icon: Icons.local_shipping_outlined,
+              label: 'Proveedores',
             ),
             BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
           ]
@@ -117,6 +134,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
                       BottomNavItem(
                         icon: Icons.local_shipping_outlined,
                         label: 'Viajes',
+                      ),
+                      BottomNavItem(
+                        icon: Icons.calendar_today_outlined,
+                        label: 'Agenda',
                       ),
                       BottomNavItem(icon: Icons.person_outline, label: 'Perfil'),
                     ]));

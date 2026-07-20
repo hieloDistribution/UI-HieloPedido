@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -13,15 +14,68 @@ import '../auth/token_storage.dart';
 /// Responsibilities:
 ///  - Inject the JWT access_token from TokenStorage on every request.
 ///  - On 401, attempt a single refresh-token rotation and retry.
+///  - Detect the runtime platform (Android emulator vs iOS simulator vs
+///    physical device) so the right loopback host is used automatically.
 ///  - Expose plain get/post/patch/delete wrappers; the provider layer
 ///    knows nothing about Supabase, JWT, or refresh logic.
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
+  // Override host for physical devices (set via [_initialize] from
+  // device-info). Defaults to platform loopback for emulator/web.
+  String _physicalDeviceHost = '10.0.2.2';
+
   // Loopback IP for the Android emulator is 10.0.2.2 (resolves to the host).
-  // On web we use localhost; on a physical device swap to your LAN IP.
-  String _host() => kIsWeb ? 'localhost' : '10.0.2.2';
+  // On web we use localhost; on iOS simulator we use localhost; on a
+  // physical Android device we use the LAN host (overridden via init).
+  String _host() {
+    if (kIsWeb) return 'localhost';
+    if (Platform.isAndroid) {
+      // We can't cheaply know here if we're on an emulator after init,
+      // so we let _physicalDeviceHost be set by [_initialize] based on
+      // device_info_plus. The default `10.0.2.2` is the Android emulator
+      // loopback so it stays a safe fallback.
+      return _physicalDeviceHost;
+    }
+    if (Platform.isIOS) {
+      // iOS simulator shares the host's loopback.
+      return 'localhost';
+    }
+    return 'localhost';
+  }
+
+  /// Call once at app startup (from `main()`) so the host is set to the
+  /// correct value for the current device before any request is sent.
+  ///
+  /// - Android emulator   -> 10.0.2.2
+  /// - iOS simulator      -> localhost
+  /// - Physical device    -> 10.0.2.2 (placeholder — override here with
+  ///                         your LAN IP before running on hardware)
+  Future<void> initialize() async {
+    if (kIsWeb) return;
+    try {
+      final info = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final android = await info.androidInfo;
+        if (android.isPhysicalDevice) {
+          // TODO: replace with your LAN IP for physical-device dev.
+          _physicalDeviceHost = '10.0.2.2';
+        } else {
+          _physicalDeviceHost = '10.0.2.2';
+        }
+      } else if (Platform.isIOS) {
+        final ios = await info.iosInfo;
+        if (!ios.isPhysicalDevice) {
+          _physicalDeviceHost = 'localhost';
+        } else {
+          _physicalDeviceHost = 'localhost';
+        }
+      }
+    } catch (e) {
+      debugPrint('ApiClient.initialize: device-info failed, keeping default host ($e)');
+    }
+  }
 
   Uri _uri(String service, String path) {
     final port = service == 'sync' ? '8081' : '8082';
