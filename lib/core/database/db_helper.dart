@@ -318,6 +318,13 @@ class DbHelper {
     await db.delete('orders');
   }
 
+  // Clear all pending mutations from the outbox
+  Future<void> clearAllMutations() async {
+    if (kIsWeb) return;
+    final db = await database;
+    await db.delete('outbox');
+  }
+
    // Close DB connection
    Future close() async {
      if (kIsWeb) return;

@@ -26,6 +26,14 @@ class OrderProvider with ChangeNotifier {
   final List<Map<String, dynamic>> _repartidores = [];
   List<Map<String, dynamic>> _catalogProducts = [];
   List<Map<String, dynamic>> _clienteShops = [];
+  final List<Map<String, dynamic>> _clientes = [];
+  List<Map<String, dynamic>> _adminAgendasToday = [];
+  final List<Map<String, dynamic>> _userAgendas = [];
+
+  // --- Admin profile (for the repartidor's agenda greeting banner) -----
+  String _adminName = 'Administrador';
+  String? _adminAvatarUrl;
+  Map<String, dynamic>? _selectedRepartidorForMap;
 
   // --- Business rules (mirror OrderService.java MIN_ORDER_WEIGHT_KG / MAX_ROUTE_WEIGHT_KG) ---
   static const double kMinOrderWeightKg = 100.0;
@@ -36,6 +44,7 @@ class OrderProvider with ChangeNotifier {
   bool _isSyncing = false;
   bool _isOnline = true;
   int _pendingSyncCount = 0;
+  bool _isHydrated = false;
   String _userRole = 'repartidor'; // 'admin' | 'repartidor' | 'cliente'
 
   // --- Identity (from TokenStorage /users/me) --------------------------
@@ -45,6 +54,7 @@ class OrderProvider with ChangeNotifier {
   String? _avatarUrl;
   String? _phone;
   String? _dni;
+  String? _vendorId;
   String? _businessName;
   double? _businessLat;
   double? _businessLng;
@@ -69,6 +79,12 @@ class OrderProvider with ChangeNotifier {
   List<Map<String, dynamic>> get repartidores => _repartidores;
   List<Map<String, dynamic>> get catalogProducts => _catalogProducts;
   List<Map<String, dynamic>> get clienteShops => _clienteShops;
+  List<Map<String, dynamic>> get clientes => _clientes;
+  List<Map<String, dynamic>> get adminAgendasToday => _adminAgendasToday;
+  List<Map<String, dynamic>> get userAgendas => _userAgendas;
+  String get adminName => _adminName;
+  String? get adminAvatarUrl => _adminAvatarUrl;
+  Map<String, dynamic>? get selectedRepartidorForMap => _selectedRepartidorForMap;
   bool get isLoading => _isLoading;
   bool get isSyncing => _isSyncing;
   bool get isOnline => _isOnline;
@@ -77,6 +93,7 @@ class OrderProvider with ChangeNotifier {
   String? get currentUserAvatarUrl => _avatarUrl;
   String? get currentUserFullName => _fullName;
   String? get currentUserCelular => _phone;
+  String? get vendorId => _vendorId;
   String? get currentUserEmail => _email;
   String? get currentUserId => _userId;
   String? get businessName => _businessName;
@@ -86,6 +103,7 @@ class OrderProvider with ChangeNotifier {
   Position? get currentRepartidorPosition => _currentRepartidorPosition;
   OrderModel? get incomingOrderAlert => _incomingOrderAlert;
   Set<String> get ratedOrderIds => _ratedOrderIds;
+  bool get isHydrated => _isHydrated;
 
   /// Convenience "current user" object for legacy widget code that did
   /// `provider.currentUser?.id`. We expose the JWT subject as `id` and the
@@ -144,6 +162,21 @@ class OrderProvider with ChangeNotifier {
     _userRole = profile['role'] ?? 'repartidor';
     _fullName = profile['full_name'];
     _avatarUrl = profile['avatar_url'];
+    final token = await TokenStorage.instance.getAccessToken();
+    if (token != null && token.isNotEmpty) {
+      try {
+        final parts = token.split('.');
+        if (parts.length == 3) {
+          final payload = parts[1];
+          final normalized = base64Url.normalize(payload);
+          final decoded = jsonDecode(utf8.decode(base64Url.decode(normalized))) as Map<String, dynamic>;
+          _vendorId = decoded['vendor_id'] as String?;
+        }
+      } catch (e) {
+        debugPrint('Error decodificando JWT en bootstrap: $e');
+      }
+    }
+    _isHydrated = true;
     notifyListeners();
   }
 
@@ -201,7 +234,7 @@ class OrderProvider with ChangeNotifier {
       final resp = await ApiClient.instance.post('sync', '/api/v1/auth/login', {
         'email': email,
         'password': password,
-      });
+      }, false); // no enviar token previo en llamadas de auth pública
       if (resp.statusCode != 200) {
         final body = _decode(resp.body);
         throw Exception(body['error'] ?? 'login_failed');
@@ -250,7 +283,7 @@ class OrderProvider with ChangeNotifier {
         // currently keeps them client-side until the repartidor profile
         // is provisioned by an admin.
       };
-      final resp = await ApiClient.instance.post('sync', '/api/v1/auth/signup', body);
+      final resp = await ApiClient.instance.post('sync', '/api/v1/auth/signup', body, false); // no enviar token previo
       if (resp.statusCode != 201) {
         final err = _decode(resp.body);
         throw Exception(err['error'] ?? err['message'] ?? 'signup_failed');
@@ -266,16 +299,26 @@ class OrderProvider with ChangeNotifier {
 
   Future<void> _ingestAuthResponse(String body) async {
     final json = _decode(body);
+    final token = json['access_token'] as String;
     await TokenStorage.instance.save(
-      accessToken: json['access_token'] as String,
+      accessToken: token,
       refreshToken: json['refresh_token'] as String,
       expiresInSeconds: (json['expires_in'] as num?)?.toInt() ?? 900,
       userId: '',
       email: '',
       role: '',
     );
-    // The /auth response doesn't carry user fields, so we will fetch /me
-    // immediately afterward to populate the profile snapshot.
+    try {
+      final parts = token.split('.');
+      if (parts.length == 3) {
+        final payload = parts[1];
+        final normalized = base64Url.normalize(payload);
+        final decoded = jsonDecode(utf8.decode(base64Url.decode(normalized))) as Map<String, dynamic>;
+        _vendorId = decoded['vendor_id'] as String?;
+      }
+    } catch (e) {
+      debugPrint('Error decodificando JWT en login/signup: $e');
+    }
   }
 
   Future<void> refreshUserRole() async {
@@ -294,6 +337,7 @@ class OrderProvider with ChangeNotifier {
       _avatarUrl = json['avatar_url'] as String?;
       _phone = json['phone'] as String?;
       _dni = json['dni'] as String?;
+      _vendorId = json['vendor_id'] as String?;
       _businessName = json['business_name'] as String?;
       _businessLat = (json['business_lat'] as num?)?.toDouble();
       _businessLng = (json['business_lng'] as num?)?.toDouble();
@@ -348,7 +392,7 @@ class OrderProvider with ChangeNotifier {
         try {
           await ApiClient.instance.post('sync', '/api/v1/auth/logout', {
             'refresh_token': refresh,
-          });
+          }, false); // logout es público — no enviar token expirado
         } catch (_) {/* best-effort */}
       }
       _stopLocationReporting();
@@ -356,11 +400,12 @@ class OrderProvider with ChangeNotifier {
       await OrdersSocket.instance.disconnect();
       await TokenStorage.instance.clear();
       await _db.clearAllOrders();
+      await _db.clearAllMutations();
       _orders.clear();
       _adminOrders.clear();
       _repartidores.clear();
       _clienteShops.clear();
-      _userId = _email = _fullName = _avatarUrl = _phone = _dni = null;
+      _userId = _email = _fullName = _avatarUrl = _phone = _dni = _vendorId = null;
       _businessName = _businessAddress = null;
       _businessLat = _businessLng = null;
       _userRole = 'repartidor';
@@ -841,10 +886,14 @@ class OrderProvider with ChangeNotifier {
             status = 'CANCELLED';
             break;
         }
+        final salespersonId = _userRole == 'vendedor'
+            ? (_vendorId ?? orderMap['repartidor_id'] ?? orderMap['user_id'])
+            : (orderMap['repartidor_id'] ?? orderMap['user_id']);
+
         final javaOrder = <String, dynamic>{
           'clientOrderId': orderMap['client_order_id'],
           'clientId': orderMap['user_id'],
-          'salespersonId': orderMap['repartidor_id'] ?? orderMap['user_id'],
+          'salespersonId': salespersonId,
           'createdAt': orderMap['created_at'],
           'totalAmount': total,
           if (orderMap['delivery_latitude'] != null)
@@ -913,10 +962,26 @@ class OrderProvider with ChangeNotifier {
       // 200 with success=false → backend rejected (business rule, stock, etc.)
       return (json['message'] as String?) ?? 'El backend rechazó el pedido';
     }
-    // 4xx / 5xx → backend explicitly rejected, surface body.
-    return resp.body.isNotEmpty
-        ? resp.body
-        : 'Error ${resp.statusCode}';
+    // 4xx / 5xx → backend explicitly rejected, extract error code.
+    if (resp.body.isEmpty) return 'Error ${resp.statusCode}';
+    try {
+      final errJson = _decode(resp.body);
+      final code = errJson['error'] as String? ?? '';
+      switch (code) {
+        case 'token_expired':
+          return 'Tu sesión expiró. Cerrá y volvé a iniciar sesión.';
+        case 'token_invalid':
+          return 'Sesión inválida. Iniciá sesión nuevamente.';
+        case 'no_token':
+          return 'No autenticado. Iniciá sesión.';
+        case 'order_service_unavailable':
+          return 'El servidor de pedidos no está disponible. Intentá más tarde.';
+        default:
+          return errJson['message'] as String? ?? resp.body;
+      }
+    } catch (_) {
+      return resp.body;
+    }
   }
 
   // --- Admin ------------------------------------------------------------
@@ -1044,6 +1109,158 @@ class OrderProvider with ChangeNotifier {
     } catch (e) {
       debugPrint('fetchClienteShops error: $e');
     }
+  }
+
+  /// Cached list of clients used by admin/assignment flows (separate from
+  /// _clienteShops to avoid forcing legacy cliente dropdown code to handle
+  /// the shape returned by the agendas/clientes endpoints).
+  Future<void> fetchClientes() async {
+    if (_userId == null || !_isOnline) return;
+    try {
+      final resp = await ApiClient.instance.get('order', '/api/v1/clients');
+      if (resp.statusCode == 200) {
+        _clientes
+          ..clear()
+          ..addAll((jsonDecode(resp.body) as List)
+              .map((c) => (c as Map).cast<String, dynamic>()));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchClientes error: $e');
+    }
+  }
+
+  // --- Agendas / Preventistas ------------------------------------------
+  /// Loads the admin's profile (used as the greeting avatar in the
+  /// repartidor agenda screen). Tolerant of offline — keeps the previous
+  /// values on failure.
+  Future<void> fetchAdminProfile() async {
+    if (_userId == null || !_isOnline) return;
+    try {
+      final resp = await ApiClient.instance.get('order', '/api/v1/preventistas/admin');
+      if (resp.statusCode == 200) {
+        final data = _decode(resp.body);
+        _adminName = (data['fullName'] ?? data['full_name'] ?? 'Administrador').toString();
+        _adminAvatarUrl = (data['avatarUrl'] ?? data['avatar_url']) as String?;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchAdminProfile error: $e');
+    }
+  }
+
+  /// Public alias of [refreshUserRole] for screen code that wants to make
+  /// the intent explicit (e.g. the repartidor agenda refreshes the user's
+  /// profile in parallel with admin profile / agenda fetches).
+  Future<void> fetchCurrentUserProfile() => refreshUserRole();
+
+  /// Admin view: list of agendas scheduled for today, grouped by preventista.
+  Future<void> fetchAdminAgendasToday() async {
+    if (_userId == null || !_isOnline) return;
+    try {
+      final resp = await ApiClient.instance.get('order', '/api/v1/agendas/today');
+      if (resp.statusCode == 200) {
+        _adminAgendasToday = (jsonDecode(resp.body) as List)
+            .map((a) => (a as Map).cast<String, dynamic>())
+            .toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchAdminAgendasToday error: $e');
+    }
+  }
+
+  /// Repartidor view: list of agendas assigned to the current user.
+  Future<void> fetchUserAgendas() async {
+    if (_userId == null) return;
+    if (!_isOnline) {
+      notifyListeners();
+      return;
+    }
+    try {
+      final resp =
+          await ApiClient.instance.get('order', '/api/v1/agendas/preventista/$_userId');
+      if (resp.statusCode == 200) {
+        _userAgendas
+          ..clear()
+          ..addAll((jsonDecode(resp.body) as List)
+              .map((a) => (a as Map).cast<String, dynamic>()));
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('fetchUserAgendas error: $e');
+    }
+  }
+
+  /// Admin assigns a route agenda to a preventista for a given date.
+  /// Returns `true` only when the backend acknowledges with 201.
+  Future<bool> assignAgenda({
+    required String preventistaId,
+    required DateTime date,
+    required List<String> clientIds,
+  }) async {
+    if (_userId == null || !_isOnline) return false;
+    try {
+      final formatted =
+          '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      final resp = await ApiClient.instance.post('order', '/api/v1/agendas', {
+        'preventistaId': preventistaId,
+        'date': formatted,
+        'clientIds': clientIds,
+      });
+      if (resp.statusCode == 201) {
+        await fetchAdminAgendasToday();
+        return true;
+      }
+      debugPrint('assignAgenda rejected: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      debugPrint('assignAgenda error: $e');
+      return false;
+    }
+  }
+
+  /// Repartidor accepts an agenda. Optimistic local update, then sync.
+  Future<void> acceptAgenda(String agendaId) async {
+    if (_userId == null) return;
+    final idx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (idx != -1) {
+      _userAgendas[idx] = {..._userAgendas[idx], 'status': 'ACEPTADA'};
+      notifyListeners();
+    }
+    if (!_isOnline) return;
+    try {
+      await ApiClient.instance.post(
+          'order', '/api/v1/agendas/$agendaId/status', {'status': 'ACEPTADA'});
+      await fetchUserAgendas();
+    } catch (e) {
+      debugPrint('acceptAgenda error: $e');
+    }
+  }
+
+  /// Repartidor rejects an agenda. Optimistic local update, then sync.
+  Future<void> rejectAgenda(String agendaId) async {
+    if (_userId == null) return;
+    final idx = _userAgendas.indexWhere((a) => a['id'] == agendaId);
+    if (idx != -1) {
+      _userAgendas[idx] = {..._userAgendas[idx], 'status': 'RECHAZADA'};
+      notifyListeners();
+    }
+    if (!_isOnline) return;
+    try {
+      await ApiClient.instance.post(
+          'order', '/api/v1/agendas/$agendaId/status', {'status': 'RECHAZADA'});
+      await fetchUserAgendas();
+    } catch (e) {
+      debugPrint('rejectAgenda error: $e');
+    }
+  }
+
+  /// Mark a repartidor so the map view can focus on it (used by the admin
+  /// "Proveedores" screen when the user taps the map icon).
+  void selectRepartidorForMap(Map<String, dynamic>? repartidor) {
+    _selectedRepartidorForMap = repartidor;
+    notifyListeners();
   }
 
   // --- Silent polling (fallback while WS reconnects) --------------------
