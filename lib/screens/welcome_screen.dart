@@ -18,7 +18,7 @@ Color _accentForStep(OnboardingStep step) {
     case OnboardingStep.welcome:
       return const Color(0xFF00C2FF); // celeste/azul
     case OnboardingStep.email:
-      return const Color(0xFFFF9331); // naranja cálido
+      return const Color(0xFFFF9331); // naranja
     case OnboardingStep.password:
       return const Color(0xFF8B5CF6); // violeta
   }
@@ -26,11 +26,23 @@ Color _accentForStep(OnboardingStep step) {
 
 /// Lo que rota en el carrusel vertical — adaptalo a lo que quieras destacar
 /// de tu app.
-const List<_CarouselItem> _kAppHighlights = [
-  _CarouselItem('Pedidos', Icons.receipt_long_rounded),
-  _CarouselItem('Stock', Icons.inventory_2_rounded),
-  _CarouselItem('Entregas', Icons.local_shipping_rounded),
-  _CarouselItem('Rutas', Icons.map_rounded),
+const List<_CarouselItem> _kWelcomeHighlights = [
+  _CarouselItem('Pedidos', Icons.receipt_long_rounded, 'Gestioná pedidos\nde hielo en tiempo real'),
+  _CarouselItem('Stock', Icons.inventory_2_rounded, 'Controlá tu inventario\nsin complicaciones'),
+  _CarouselItem('Entregas', Icons.local_shipping_rounded, 'Seguí cada entrega\nal instante'),
+  _CarouselItem('Rutas', Icons.map_rounded, 'Optimizá tus rutas\nde entrega'),
+];
+
+const List<_CarouselItem> _kEmailHighlights = [
+  _CarouselItem('Inicio', Icons.login_rounded, 'Accedé a tu cuenta\ncon tu correo electrónico'),
+  _CarouselItem('Rápido', Icons.flash_on_rounded, 'Inicio de sesión\nen segundos'),
+  _CarouselItem('Seguro', Icons.lock_rounded, 'Tus datos protegidos\ncon encriptación'),
+];
+
+const List<_CarouselItem> _kPasswordHighlights = [
+  _CarouselItem('Seguridad', Icons.shield_rounded, 'Protegé tu cuenta\ncon una contraseña segura'),
+  _CarouselItem('Privacidad', Icons.visibility_off_rounded, 'Tus datos personales\nsiempre privados'),
+  _CarouselItem('Confianza', Icons.verified_rounded, 'Sistema seguro\ny confiable'),
 ];
 
 class WelcomeScreen extends StatefulWidget {
@@ -144,8 +156,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               _AuroraBackground(
                 liquidOffset: offset,
                 accentColor: accent,
-                heightFraction: _step == OnboardingStep.welcome ? 0.55 : 0.55,
+                heightFraction: _step == OnboardingStep.welcome ? 0.55 : _step == OnboardingStep.email ? -0.75 : 0.55,
                 fromBottom: _step == OnboardingStep.welcome,
+                topOverlayColor: _step == OnboardingStep.email ? const Color(0xFFFF6B6B) : null,
               ),
 
               // Overlay blanco: aparece cuando el usuario toca un input,
@@ -214,13 +227,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             const SizedBox(height: 16),
             // Carrusel en zona blanca, pegado al borde izquierdo
               Transform.translate(
-                offset: const Offset(-85, 110),
+                offset: const Offset(-85, 140),
                 child: _VerticalWordCarousel(
-                  items: _kAppHighlights,
+                  items: _kWelcomeHighlights,
                   accent: accent,
                   variant: _CarouselVariant.light,
                   carouselWidth: 600,
-                  rowHeight: 108,
+                  rowHeight: 150,
                 ),
               ),
             const Spacer(),
@@ -306,55 +319,51 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
                 ],
               ),
-              const Spacer(flex: 3),
-              Align(
-                alignment: Alignment.centerLeft,
+              const Spacer(flex: 1),
+              Transform.translate(
+                offset: const Offset(-85, 170),
                 child: _VerticalWordCarousel(
-                  items: _kAppHighlights,
+                  items: _kEmailHighlights,
                   accent: accent,
-                  variant: dark
-                      ? _CarouselVariant.light
-                      : _CarouselVariant.dark,
+                  variant: _CarouselVariant.light,
+                  carouselWidth: 600,
+                  rowHeight: 150,
                 ),
               ),
-              const Spacer(flex: 2),
+              const Spacer(flex: 1),
+              const SizedBox(height: 70),
               Text(
-                'Ingresa tu Correo',
+                'Ingrese su mail',
                 style: GoogleFonts.outfit(
-                  color: titleColor,
-                  fontSize: 28,
+                  color: Colors.black87,
+                  fontSize: 36,
                   fontWeight: FontWeight.bold,
-                  shadows: dark
-                      ? null
-                      : [
-                          Shadow(
-                            color: Colors.black.withOpacity(0.15),
-                            offset: const Offset(0, 2),
-                            blurRadius: 6,
-                          ),
-                        ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
-                'Escribe tu dirección de correo electrónico para continuar.',
-                style: GoogleFonts.openSans(color: subtitleColor, fontSize: 14),
+                'Para poder iniciar sesión ingresa con el email que te asignó el administrador',
+                style: GoogleFonts.openSans(
+                  color: Colors.black54,
+                  fontSize: 15,
+                  height: 1.4,
+                ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
               TextFormField(
                 controller: _emailController,
                 focusNode: _emailFocusNode,
                 keyboardType: TextInputType.emailAddress,
-                style: TextStyle(color: inputTextColor),
+                style: TextStyle(color: inputTextColor, fontSize: 16),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: fieldFillColor,
-                  hintText: 'ejemplo@correo.com',
-                  hintStyle: TextStyle(color: hintColor),
-                  prefixIcon: Icon(Icons.email_outlined, color: accent),
+                  hintText: 'Ingrese su mail',
+                  hintStyle: TextStyle(color: Colors.grey, fontSize: 16),
+                  contentPadding: const EdgeInsets.only(left: 20, right: 60, top: 22, bottom: 22),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: borderColor),
+                    borderSide: const BorderSide(color: Colors.grey),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -371,25 +380,31 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       width: 1.5,
                     ),
                   ),
+                  suffixIcon: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                        onPressed: () {
+                          if (_emailFormKey.currentState!.validate()) {
+                            setState(() {
+                              _step = OnboardingStep.password;
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                  ),
                 ),
                 validator: (val) {
                   if (val == null || !val.contains('@')) {
                     return 'Por favor ingresa un correo válido';
                   }
                   return null;
-                },
-              ),
-              const SizedBox(height: 32),
-              _GlassButton(
-                label: 'Siguiente',
-                icon: Icons.arrow_forward_rounded,
-                isPrimary: true,
-                onTap: () {
-                  if (_emailFormKey.currentState!.validate()) {
-                    setState(() {
-                      _step = OnboardingStep.password;
-                    });
-                  }
                 },
               ),
               const Spacer(flex: 2),
@@ -420,7 +435,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: _VerticalWordCarousel(
-                  items: _kAppHighlights,
+                  items: _kPasswordHighlights,
                   accent: accent,
                   variant: dark
                       ? _CarouselVariant.light
@@ -510,8 +525,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                       icon: Icons.login_rounded,
                       isPrimary: true,
                       onTap: () => _submit(provider),
-                    ),
-              const Spacer(flex: 2),
+              ),
+              const Spacer(flex: 1),
             ],
           ),
         );
@@ -522,7 +537,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 class _CarouselItem {
   final String label;
   final IconData icon;
-  const _CarouselItem(this.label, this.icon);
+  final String description;
+  const _CarouselItem(this.label, this.icon, this.description);
 }
 
 enum _CarouselVariant { light, dark }
@@ -625,20 +641,19 @@ class _VerticalWordCarouselState extends State<_VerticalWordCarousel>
                 final isCenterish = dist < 0.5;
 
                 final textColor = isLight
-                    ? (isCenterish ? Colors.black87 : Colors.black38)
+                    ? Colors.black87
                     : (isCenterish ? Colors.white : Colors.white54);
 
                 Widget iconWidget;
                 if (isLight && isCenterish) {
-                  // Chip de color para que el ícono se note bien sobre blanco
                   iconWidget = Container(
-                    width: 30,
-                    height: 30,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       color: widget.accent.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(9),
+                      borderRadius: BorderRadius.circular(11),
                     ),
-                    child: Icon(item.icon, size: 17, color: widget.accent),
+                    child: Icon(item.icon, size: 22, color: widget.accent),
                   );
                 } else if (isLight) {
                   iconWidget = Icon(item.icon, size: 15, color: Colors.black26);
@@ -658,18 +673,38 @@ class _VerticalWordCarouselState extends State<_VerticalWordCarousel>
                       scale: scale,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          iconWidget,
+                          Padding(
+                            padding: EdgeInsets.only(top: isCenterish ? 4 : 0),
+                            child: iconWidget,
+                          ),
                           const SizedBox(width: 10),
-                          Text(
-                            item.label,
-                            style: TextStyle(
-                              color: textColor,
-                              fontSize: isCenterish ? 54 : 34,
-                              fontWeight: isCenterish
-                                  ? FontWeight.bold
-                                  : FontWeight.w500,
-                            ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.label,
+                                style: TextStyle(
+                                  color: textColor,
+                                  fontSize: isCenterish ? 58 : 34,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (isCenterish)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    item.description,
+                                    style: TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 16,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ],
                       ),
@@ -737,12 +772,14 @@ class _AuroraBackground extends StatefulWidget {
   final Color accentColor;
   final double heightFraction;
   final bool fromBottom;
+  final Color? topOverlayColor;
 
   const _AuroraBackground({
     required this.liquidOffset,
     required this.accentColor,
     this.heightFraction = 0.30,
     this.fromBottom = false,
+    this.topOverlayColor,
   });
 
   @override
@@ -852,12 +889,12 @@ class _AuroraBackgroundState extends State<_AuroraBackground>
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(w),
-                          gradient: RadialGradient(
-                            center: const Alignment(0, -0.6),
-                            radius: 0.75,
-                            colors: [core, accent, accent.withOpacity(0)],
-                            stops: const [0.0, 0.55, 1.0],
-                          ),
+                            gradient: RadialGradient(
+                              center: const Alignment(0, -0.6),
+                              radius: 0.6,
+                              colors: [core, core, accent],
+                              stops: const [0.0, 0.4, 1.0],
+                            ),
                         ),
                       ),
                     ),
@@ -867,11 +904,40 @@ class _AuroraBackgroundState extends State<_AuroraBackground>
                 ? h * (1 - widget.heightFraction)
                 : h * widget.heightFraction;
 
+            final overlay = widget.topOverlayColor != null && !widget.fromBottom
+                ? Positioned(
+                    left: -w * 0.8,
+                    width: w * 2.6,
+                    top: -h * 0.05,
+                    height: h * 0.7,
+                    child: ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(w),
+                          gradient: RadialGradient(
+                            center: const Alignment(0, -0.5),
+                            radius: 0.6,
+                            colors: [
+                              widget.topOverlayColor!.withOpacity(0.45),
+                              widget.topOverlayColor!.withOpacity(0.3),
+                              widget.topOverlayColor!.withOpacity(0),
+                            ],
+                            stops: const [0.0, 0.4, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink();
+
             return Stack(
               children: [
                 const ColoredBox(color: Colors.white),
 
                 hill,
+
+                overlay,
 
                 RepaintBoundary(
                   child: Stack(
