@@ -62,6 +62,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
   final Map<String, int> _selectedQuantities = {};
   Map<String, dynamic>? _selectedShop;
   String _searchQuery = '';
+  String _paymentMethod = 'efectivo'; // 'efectivo' o 'transferencia'
 
   @override
   void initState() {
@@ -109,7 +110,7 @@ class _CreateOrderViewState extends State<CreateOrderView> {
     return total;
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (_selectedShop == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -152,21 +153,33 @@ class _CreateOrderViewState extends State<CreateOrderView> {
         .join(', ');
 
     try {
+      final clientId = _selectedShop!['id'] ?? _selectedShop!['client_id'] ?? _selectedShop!['profile_id'];
+      if (clientId != null) {
+        await provider.createOrder(
+          clientId: clientId.toString(),
+          items: selectedItems,
+          paymentMethod: _paymentMethod,
+        );
+      }
+
       provider.addOrder(
         shopName,
         jsonEncode(selectedItems), // Guardamos el JSON de los hielos en productId
         productNameSummary,
         1, // Cantidad base 1, el detalle va en la lista interna
         _totalAmount,
-        deliveryLatitude: _selectedShop!['latitud_comercial'],
-        deliveryLongitude: _selectedShop!['longitud_comercial'],
-        deliveryAddress: _selectedShop!['direccion'],
+        deliveryLatitude: _selectedShop!['latitud_comercial'] ?? _selectedShop!['latitude'],
+        deliveryLongitude: _selectedShop!['longitud_comercial'] ?? _selectedShop!['longitude'],
+        deliveryAddress: _selectedShop!['direccion'] ?? _selectedShop!['address'],
         clientUserId: _selectedShop!['profile_id'],
-        clientPhone: _selectedShop!['celular'],
+        clientPhone: _selectedShop!['celular'] ?? _selectedShop!['phone'],
       );
 
       if (widget.agendaItemId != null) {
-        provider.completeAgendaItem(widget.agendaItemId!, 'Pedido tomado desde el formulario');
+        await provider.completeAgendaItem(
+          widget.agendaItemId!,
+          'Pedido tomado con éxito desde la agenda',
+        );
       }
 
       showPremiumSuccessDialog(
@@ -427,7 +440,9 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: isSelected ? indigoCustom.withOpacity(0.04) : Colors.black.withOpacity(0.01),
+                                color: isSelected
+                                    ? indigoCustom.withValues(alpha: 0.04)
+                                    : Colors.black.withValues(alpha: 0.01),
                                 blurRadius: 8,
                                 offset: const Offset(0, 4),
                               ),
@@ -599,6 +614,125 @@ class _CreateOrderViewState extends State<CreateOrderView> {
                           ),
                         );
                       },
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // --- SECCIÓN 3: FORMA DE PAGO CON ICONOS HUGEICONS ---
+                    Text(
+                      'Forma de Pago',
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: slate700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        // EFECTIVO (Money04Icon)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _paymentMethod = 'efectivo';
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: _paymentMethod == 'efectivo' ? slate900 : Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: _paymentMethod == 'efectivo' ? slate900 : slate200,
+                                  width: _paymentMethod == 'efectivo' ? 2.0 : 1.0,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _paymentMethod == 'efectivo'
+                                        ? slate900.withValues(alpha: 0.15)
+                                        : Colors.black.withValues(alpha: 0.02),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  HugeIcon(
+                                    icon: HugeIcons.strokeRoundedMoney04,
+                                    color: _paymentMethod == 'efectivo' ? Colors.white : slate700,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Efectivo',
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: _paymentMethod == 'efectivo' ? Colors.white : slate700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+
+                        // TRANSFERENCIA (CreditCardIcon)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _paymentMethod = 'transferencia';
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: _paymentMethod == 'transferencia' ? slate900 : Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: _paymentMethod == 'transferencia' ? slate900 : slate200,
+                                  width: _paymentMethod == 'transferencia' ? 2.0 : 1.0,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _paymentMethod == 'transferencia'
+                                        ? slate900.withValues(alpha: 0.15)
+                                        : Colors.black.withValues(alpha: 0.02),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  HugeIcon(
+                                    icon: HugeIcons.strokeRoundedCreditCard,
+                                    color: _paymentMethod == 'transferencia' ? Colors.white : slate700,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Transferencia',
+                                    style: GoogleFonts.outfit(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                      color: _paymentMethod == 'transferencia' ? Colors.white : slate700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

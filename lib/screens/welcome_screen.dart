@@ -156,9 +156,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               _AuroraBackground(
                 liquidOffset: offset,
                 accentColor: accent,
-                heightFraction: _step == OnboardingStep.welcome ? 0.55 : _step == OnboardingStep.email ? -0.75 : 0.55,
+                heightFraction: _step == OnboardingStep.welcome
+                    ? 0.55
+                    : (_step == OnboardingStep.email || _step == OnboardingStep.password ? -0.75 : 0.55),
                 fromBottom: _step == OnboardingStep.welcome,
-                topOverlayColor: _step == OnboardingStep.email ? const Color(0xFFFF6B6B) : null,
+                topOverlayColor: _step == OnboardingStep.email
+                    ? const Color(0xFFFF6B6B)
+                    : (_step == OnboardingStep.password ? const Color(0xFF7C3AED) : null),
               ),
 
               // Overlay blanco: aparece cuando el usuario toca un input,
@@ -296,238 +300,259 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 });
               },
             ),
-            const SizedBox(height: 24),
+             const SizedBox(height: 24),
           ],
         );
 
       case OnboardingStep.email:
         return Form(
           key: _emailFormKey,
-          child: Column(
-            key: const ValueKey('email_step'),
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new, color: backIconColor),
-                    onPressed: () {
-                      setState(() {
-                        _step = OnboardingStep.welcome;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const Spacer(flex: 1),
-              Transform.translate(
-                offset: const Offset(-85, 170),
-                child: _VerticalWordCarousel(
-                  items: _kEmailHighlights,
-                  accent: accent,
-                  variant: _CarouselVariant.light,
-                  carouselWidth: 600,
-                  rowHeight: 150,
-                ),
-              ),
-              const Spacer(flex: 1),
-              const SizedBox(height: 70),
-              Text(
-                'Ingrese su mail',
-                style: GoogleFonts.outfit(
-                  color: Colors.black87,
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Para poder iniciar sesión ingresa con el email que te asignó el administrador',
-                style: GoogleFonts.openSans(
-                  color: Colors.black54,
-                  fontSize: 15,
-                  height: 1.4,
-                ),
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _emailController,
-                focusNode: _emailFocusNode,
-                keyboardType: TextInputType.emailAddress,
-                style: TextStyle(color: inputTextColor, fontSize: 16),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: fieldFillColor,
-                  hintText: 'Ingrese su mail',
-                  hintStyle: TextStyle(color: Colors.grey, fontSize: 16),
-                  contentPadding: const EdgeInsets.only(left: 20, right: 60, top: 22, bottom: 22),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Colors.grey),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: accent, width: 1.5),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Colors.redAccent),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(
-                      color: Colors.redAccent,
-                      width: 1.5,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      key: const ValueKey('email_step'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: IconButton(
+                            icon: Icon(Icons.arrow_back_ios_new, color: backIconColor),
+                            onPressed: () {
+                              setState(() {
+                                _step = OnboardingStep.welcome;
+                              });
+                            },
+                          ),
+                        ),
+                        const Spacer(),
+                        Transform.translate(
+                          offset: const Offset(-85, 0),
+                          child: _VerticalWordCarousel(
+                            items: _kEmailHighlights,
+                            accent: accent,
+                            variant: _CarouselVariant.light,
+                            carouselWidth: 600,
+                            rowHeight: 130,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Ingrese su mail',
+                          style: GoogleFonts.outfit(
+                            color: Colors.black87,
+                            fontSize: 34,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Para poder iniciar sesión ingresa con el email que te asignó el administrador',
+                          style: GoogleFonts.openSans(
+                            color: Colors.black54,
+                            fontSize: 15,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        TextFormField(
+                          controller: _emailController,
+                          focusNode: _emailFocusNode,
+                          keyboardType: TextInputType.emailAddress,
+                          style: TextStyle(color: inputTextColor, fontSize: 16),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: fieldFillColor,
+                            hintText: 'Ingrese su mail',
+                            hintStyle: TextStyle(color: Colors.grey, fontSize: 16),
+                            contentPadding: const EdgeInsets.only(left: 20, right: 60, top: 22, bottom: 22),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: Colors.grey),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: accent, width: 1.5),
+                            ),
+                            errorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: Colors.redAccent),
+                            ),
+                            focusedErrorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: Colors.redAccent,
+                                width: 1.5,
+                              ),
+                            ),
+                            suffixIcon: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.black,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: IconButton(
+                                  icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                                  onPressed: () {
+                                    if (_emailFormKey.currentState!.validate()) {
+                                      setState(() {
+                                        _step = OnboardingStep.password;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ),
+                          validator: (val) {
+                            if (val == null || !val.contains('@')) {
+                              return 'Por favor ingresa un correo válido';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 36),
+                      ],
                     ),
                   ),
-                  suffixIcon: Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
-                        onPressed: () {
-                          if (_emailFormKey.currentState!.validate()) {
-                            setState(() {
-                              _step = OnboardingStep.password;
-                            });
-                          }
-                        },
-                      ),
-                    ),
-                  ),
                 ),
-                validator: (val) {
-                  if (val == null || !val.contains('@')) {
-                    return 'Por favor ingresa un correo válido';
-                  }
-                  return null;
-                },
-              ),
-              const Spacer(flex: 2),
-            ],
+              );
+            },
           ),
         );
 
       case OnboardingStep.password:
         return Form(
           key: _passwordFormKey,
-          child: Column(
-            key: const ValueKey('password_step'),
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new, color: backIconColor),
-                    onPressed: () {
-                      setState(() {
-                        _step = OnboardingStep.email;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const Spacer(flex: 3),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _VerticalWordCarousel(
-                  items: _kPasswordHighlights,
-                  accent: accent,
-                  variant: dark
-                      ? _CarouselVariant.light
-                      : _CarouselVariant.dark,
-                ),
-              ),
-              const Spacer(flex: 2),
-              Text(
-                'Ingresa tu Contraseña',
-                style: GoogleFonts.outfit(
-                  color: titleColor,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  shadows: dark
-                      ? null
-                      : [
-                          Shadow(
-                            color: Colors.black.withOpacity(0.15),
-                            offset: const Offset(0, 2),
-                            blurRadius: 6,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      key: const ValueKey('password_step'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: IconButton(
+                            icon: Icon(Icons.arrow_back_ios_new, color: backIconColor),
+                            onPressed: () {
+                              setState(() {
+                                _step = OnboardingStep.email;
+                              });
+                            },
                           ),
-                        ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Escribe la contraseña asociada a tu cuenta.',
-                style: GoogleFonts.openSans(color: subtitleColor, fontSize: 14),
-              ),
-              const SizedBox(height: 32),
-              TextFormField(
-                controller: _passwordController,
-                focusNode: _passwordFocusNode,
-                obscureText: _obscurePassword,
-                style: TextStyle(color: inputTextColor),
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: fieldFillColor,
-                  hintText: 'Escribe tu contraseña',
-                  hintStyle: TextStyle(color: hintColor),
-                  prefixIcon: Icon(Icons.lock_outline, color: accent),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: dark ? Colors.black45 : Colors.white70,
+                        ),
+                        const Spacer(),
+                        Transform.translate(
+                          offset: const Offset(-85, 0),
+                          child: _VerticalWordCarousel(
+                            items: _kPasswordHighlights,
+                            accent: accent,
+                            variant: _CarouselVariant.light,
+                            carouselWidth: 600,
+                            rowHeight: 130,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          'Ingresa tu Contraseña',
+                          style: GoogleFonts.outfit(
+                            color: titleColor,
+                            fontSize: 30,
+                            fontWeight: FontWeight.bold,
+                            shadows: dark
+                                ? null
+                                : [
+                                    Shadow(
+                                      color: Colors.black.withOpacity(0.15),
+                                      offset: const Offset(0, 2),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Escribe la contraseña asociada a tu cuenta.',
+                          style: GoogleFonts.openSans(color: subtitleColor, fontSize: 14),
+                        ),
+                        const SizedBox(height: 28),
+                        TextFormField(
+                          controller: _passwordController,
+                          focusNode: _passwordFocusNode,
+                          obscureText: _obscurePassword,
+                          style: TextStyle(color: inputTextColor),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: fieldFillColor,
+                            hintText: 'Escribe tu contraseña',
+                            hintStyle: TextStyle(color: hintColor),
+                            prefixIcon: Icon(Icons.lock_outline, color: accent),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: dark ? Colors.black45 : Colors.white70,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: borderColor),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: accent, width: 1.5),
+                            ),
+                            errorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(color: Colors.redAccent),
+                            ),
+                            focusedErrorBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: const BorderSide(
+                                color: Colors.redAccent,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          validator: (val) {
+                            if (val == null || val.length < 6) {
+                              return 'La contraseña debe tener al menos 6 caracteres';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 28),
+                        provider.isLoading
+                            ? Center(child: CircularProgressIndicator(color: accent))
+                            : _GlassButton(
+                                label: 'Iniciar Sesión',
+                                icon: Icons.login_rounded,
+                                isPrimary: true,
+                                onTap: () => _submit(provider),
+                              ),
+                        const SizedBox(height: 36),
+                      ],
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: borderColor),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide(color: accent, width: 1.5),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: Colors.redAccent),
-                  ),
-                  focusedErrorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(
-                      color: Colors.redAccent,
-                      width: 1.5,
-                    ),
                   ),
                 ),
-                validator: (val) {
-                  if (val == null || val.length < 6) {
-                    return 'La contraseña debe tener al menos 6 caracteres';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 32),
-              provider.isLoading
-                  ? Center(child: CircularProgressIndicator(color: accent))
-                  : _GlassButton(
-                      label: 'Iniciar Sesión',
-                      icon: Icons.login_rounded,
-                      isPrimary: true,
-                      onTap: () => _submit(provider),
-              ),
-              const Spacer(flex: 1),
-            ],
+              );
+            },
           ),
         );
     }

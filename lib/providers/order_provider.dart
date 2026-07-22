@@ -790,6 +790,36 @@ class OrderProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> createOrder({
+    required String clientId,
+    required List<Map<String, dynamic>> items,
+    String paymentMethod = 'efectivo',
+  }) async {
+    if (_currentUser == null) return false;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final body = {
+        'preventistaId': _currentUser!.id,
+        'clientId': clientId,
+        'items': items,
+        'paymentMethod': paymentMethod,
+      };
+      final response = await ApiClient.post('order', '/api/v1/orders', body);
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await fetchAdminOrders();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error creando pedido: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   // --- Distributor/Repartidor Orders (SQLite + Supabase Sync) ---
   Future<void> fetchOrdersFromBackend({bool silent = false}) async {
     if (currentUser == null || !_isOnline) return;
